@@ -37,6 +37,15 @@ backend/data/*.db-wal
 backend/data/*.db-shm
 backend/data/incidents/
 !backend/data/.gitkeep
+
+# Threat-intel feed cache. Fetched via `make feeds`, never committed: the data
+# is dated, third-party, and FireHOL aggregates sources with their own terms.
+# NOTE: this pattern needs the full path. A bare `data/feeds/` contains a
+# mid-string slash, so git anchors it to the repository root and it does not
+# match backend/data/feeds at all — which is exactly what happened here.
+backend/data/feeds/*
+!backend/data/feeds/.gitkeep
+
 *.log
 !data/samples/*.log
 

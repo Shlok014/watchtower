@@ -164,6 +164,12 @@ body::before {
   animation: health-blink 2s ease-in-out infinite;
 }
 .health-dot.stopped { background: var(--red); }
+/* Without these, any status other than "running" fell through to the stopped
+   style — an amber, still-working component rendered byte-identically to a
+   dead one. */
+.health-dot.degraded { background: var(--amber); box-shadow: 0 0 6px rgba(251, 191, 36, 0.5); }
+.health-dot.simulated { background: var(--purple); }
+.health-dot.unknown { background: var(--text-dim); }
 @keyframes health-blink {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.4; }
@@ -185,7 +191,11 @@ body::before {
   font-size: 0.88rem; color: var(--text-secondary);
   white-space: nowrap; transition: all 0.3s ease;
 }
-.pipeline-node.active { border-color: var(--cyan); color: var(--cyan); box-shadow: 0 0 15px rgba(56, 189, 248, 0.18); }
+.pipeline-node.running { border-color: var(--cyan); color: var(--cyan); box-shadow: 0 0 15px rgba(56, 189, 248, 0.18); }
+.pipeline-node.degraded { border-color: var(--amber); color: var(--amber); box-shadow: 0 0 15px rgba(251, 191, 36, 0.16); }
+.pipeline-node.simulated { border-color: var(--purple); color: var(--purple); }
+.pipeline-node.stopped { border-color: var(--red); color: var(--red); }
+.pipeline-node.unknown { border-color: var(--border); color: var(--text-dim); }
 .pipeline-node-icon { font-size: 1.3rem; }
 .pipeline-arrow { color: var(--cyan); font-size: 1.2rem; padding: 0 0.4rem; opacity: 0.6; font-weight: 700; }
 
@@ -230,6 +240,7 @@ body::before {
 .panel-badge.cyan { background: var(--cyan-dim); color: var(--cyan); }
 .panel-badge.red { background: var(--red-dim); color: var(--red); }
 .panel-badge.green { background: var(--green-dim); color: var(--green); }
+.panel-badge.amber { background: var(--amber-dim); color: var(--amber); }
 .panel-body { padding: 1.25rem; }
 
 /* ─── Grid Layouts ──────────────────────────────────────────────────────────── */
@@ -456,3 +467,18 @@ td.mono { font-family: var(--font-mono); }
 }
 .footer-divider { opacity: 0.3; }
 .footer-tag { font-family: var(--font-mono); font-size: 0.7rem; color: var(--text-dim); opacity: 0.6; }
+
+/* ─── Reputation verdicts (real threat-feed lookups) ─────────────────────────── */
+.rep {
+  font-size: 0.68rem; font-family: var(--font-mono); padding: 0.1rem 0.4rem;
+  border-radius: 4px; white-space: nowrap; cursor: help;
+}
+.rep-tor_exit, .rep-blocklisted { background: var(--red-dim); color: var(--red); }
+.rep-internal { background: var(--green-dim); color: var(--green); }
+.rep-non_routable { background: var(--amber-dim); color: var(--amber); }
+.rep-unlisted { background: rgba(148, 163, 184, 0.12); color: var(--text-dim); }
+.rep-unavailable, .rep-unsupported, .rep-unknown {
+  background: rgba(148, 163, 184, 0.12); color: var(--text-dim); font-style: italic;
+}
+.loading-stage.stopped { color: var(--red); }
+.loading-stage code { font-family: var(--font-mono); color: var(--cyan); }
