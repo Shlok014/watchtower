@@ -14,29 +14,43 @@ const fetchJSON = async (url, opts) => {
   try { const r = await fetch(url, opts); return await r.json() } catch { return null }
 }
 
-/* ─── Loading Screen ─────────────────────────────────────────────────────────── */
-function LoadingScreen({ stage }) {
-  const stages = [
-    { icon: '📡', label: 'Starting ingest pipeline…', done: stage > 0 },
-    { icon: '⚙️', label: 'Loading normalization engine…', done: stage > 1 },
-    { icon: '🧠', label: 'Starting detection engine…', done: stage > 2 },
-    { icon: '🤖', label: 'Connecting SOAR automation…', done: stage > 3 },
-    { icon: '🔗', label: 'Syncing blockchain ledger…', done: stage > 4 },
-    { icon: '📊', label: 'Launching dashboard…', done: stage > 5 },
-  ]
+/* ─── Connection Gate ────────────────────────────────────────────────────────── */
+/* This replaced a six-stage boot animation ("Starting ingest pipeline…",
+   "Syncing blockchain ledger…") that ticked each line to a green checkmark on a
+   400ms timer without ever contacting the backend — it reported six subsystems
+   healthy before a single request had been made, and showed the same sequence
+   with the server switched off. This one reflects one real request. */
+function ConnectionGate({ error, onRetry }) {
   return (
     <div className="loading-screen">
       <div className="loading-logo">🛡️</div>
       <div className="loading-title">Watchtower</div>
-      <div className="loading-subtitle">Initializing Security Operations Center…</div>
-      <div className="loading-stages">
-        {stages.map((s, i) => (
-          <div key={i} className={`loading-stage ${s.done ? 'done' : i === stage ? 'active' : ''}`}>
-            <span className="loading-stage-icon">{s.done ? '✅' : s.icon}</span>
-            <span>{s.label}</span>
+      {error ? (
+        <>
+          <div className="loading-subtitle">Cannot reach the backend</div>
+          <div className="loading-stages">
+            <div className="loading-stage stopped">
+              <span className="loading-stage-icon">✖</span>
+              <span>{error}</span>
+            </div>
+            <div className="loading-stage">
+              <span className="loading-stage-icon">↳</span>
+              <span>Expected at {API} — start it with <code>python app.py</code></span>
+            </div>
           </div>
-        ))}
-      </div>
+          <button className="btn btn-validate" onClick={onRetry}>Retry</button>
+        </>
+      ) : (
+        <>
+          <div className="loading-subtitle">Connecting to {API}…</div>
+          <div className="loading-stages">
+            <div className="loading-stage active">
+              <span className="loading-stage-icon">⋯</span>
+              <span>Awaiting first response</span>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   )
 }
@@ -48,23 +62,32 @@ function HealthPanel({ health }) {
     <div className="panel health-panel">
       <div className="panel-header">
         <span className="panel-title"><span className="panel-title-icon">💓</span> System Health</span>
-        <span className="panel-badge green">All Systems Operational</span>
+        <span className={`panel-badge ${health.summary?.state === 'ok' ? 'green'
+          : health.summary?.state === 'degraded' ? 'amber' : 'red'}`}>
+          {health.summary?.label || 'Unknown'}
+        </span>
       </div>
       <div className="health-grid">
         {health.components?.map((c, i) => (
           <div key={i} className="health-item">
-            <span className={`health-dot ${c.status === 'running' ? 'running' : 'stopped'}`}></span>
+            <span className={`health-dot ${c.status}`}></span>
             <span className="health-icon">{c.icon}</span>
             <div className="health-info">
               <div className="health-name">{c.name}</div>
-              <div className="health-detail">{c.detail} • {c.latency_ms}ms</div>
+              <div className="health-detail">
+                {c.detail}
+                {c.p50_ms != null && <> • p50 {c.p50_ms}ms{c.p95_ms != null && ` / p95 ${c.p95_ms}ms`}</>}
+              </div>
             </div>
           </div>
         ))}
         <div className="health-item health-meta">
           <span className="health-icon">📊</span>
           <div className="health-info">
-            <div className="health-detail">CPU: {health.cpu_percent}% • RAM: {health.memory_usage_mb}MB • {health.logs_per_second} logs/s</div>
+            <div className="health-detail">
+              CPU {health.cpu_percent}% • RSS {health.memory_usage_mb ?? '—'}MB
+              (peak {health.peak_rss_mb}MB) • {health.events_per_second} events/s
+            </div>
           </div>
         </div>
       </div>
@@ -73,21 +96,25 @@ function HealthPanel({ health }) {
 }
 
 /* ─── Pipeline ───────────────────────────────────────────────────────────────── */
-function PipelineBar({ stats }) {
+function PipelineBar({ stats, health }) {
+  // Node state comes from /api/system-health, which derives each component's
+  // status from measured state. Previously every node was hardcoded 'active'.
+  const byName = Object.fromEntries((health?.components || []).map(c => [c.name, c]))
+  const stateOf = (name) => byName[name]?.status || 'unknown'
   const nodes = [
-    { icon: '📡', label: 'Ingest Queue', sub: `${stats?.total_logs || 0} ingested` },
-    { icon: '⚙️', label: 'Normalization', sub: 'Processing' },
-    { icon: '🧠', label: 'Detection Engine', sub: stats?.model_version || 'v1.0' },
-    { icon: '🚨', label: 'Alerts', sub: `${stats?.total_alerts || 0} detected` },
-    { icon: '🤖', label: 'SOAR', sub: `${stats?.soar_actions_count || 0} actions` },
-    { icon: '🔗', label: 'Audit Ledger', sub: `${stats?.blockchain_blocks || 0} blocks` },
-    { icon: '📊', label: 'Dashboard', sub: 'Live' },
+    { icon: '📡', label: 'Ingest Queue', sub: `${stats?.total_logs || 0} ingested`, state: stateOf('Ingest Queue') },
+    { icon: '⚙️', label: 'Normalization', sub: `${stats?.logs_retained || 0} retained`, state: stateOf('Normalization') },
+    { icon: '🧠', label: 'Detection Engine', sub: stats?.ruleset_version || '—', state: stateOf('Detection Engine') },
+    { icon: '🚨', label: 'Alerts', sub: `${stats?.total_alerts || 0} raised`, state: stateOf('Alert System') },
+    { icon: '🤖', label: 'SOAR', sub: `${stats?.soar_actions_count || 0} selected`, state: stateOf('SOAR Engine') },
+    { icon: '🔗', label: 'Audit Ledger', sub: `${stats?.total_blocks || 0} blocks`, state: stateOf('Audit Ledger') },
+    { icon: '📊', label: 'Dashboard', sub: `${health?.events_per_second ?? 0} ev/s`, state: health ? 'running' : 'unknown' },
   ]
   return (
     <div className="pipeline">
       {nodes.map((n, i) => (
         <span key={i} style={{ display: 'flex', alignItems: 'center' }}>
-          <span className="pipeline-node active">
+          <span className={`pipeline-node ${n.state}`} title={`status: ${n.state}`}>
             <span className="pipeline-node-icon">{n.icon}</span>
             <span>
               <div style={{ fontWeight: 700, fontSize: '0.88rem' }}>{n.label}</div>
@@ -235,7 +262,7 @@ function LogsPanel({ logs, search, setSearch, severity, setSeverity, source, set
               <th>Source</th>
               <th>Event</th>
               <th>IP Address</th>
-              <th>Location</th>
+              <th>Reputation</th>
               <th>User</th>
               <th>Severity</th>
             </tr>
@@ -249,7 +276,8 @@ function LogsPanel({ logs, search, setSearch, severity, setSeverity, source, set
                 <td><span className="source-tag">{log.source}</span></td>
                 <td>{log.event?.replace(/_/g, ' ')}</td>
                 <td className="mono">{log.ip}</td>
-                <td>{log.geo?.flag} {log.geo?.country}</td>
+                <td><span className={`rep rep-${log.reputation?.verdict || 'unknown'}`}
+                        title={log.reputation?.detail}>{log.reputation?.verdict?.replace(/_/g, ' ') || '—'}</span></td>
                 <td>{log.user}</td>
                 <td><span className={`severity ${log.severity}`}><span className="severity-dot"></span>{log.severity}</span></td>
               </tr>
@@ -280,12 +308,12 @@ function AlertsPanel({ alerts }) {
                 ⚠ {a.event?.replace(/_/g, ' ')}
               </span>
               <span className="alert-score">
-                Score: {a.anomaly_score} <span className="confidence-tag">conf: {a.confidence}</span>
+                Score: {a.anomaly_score}<span className="confidence-tag">/ {a.features?.threshold ?? 0.45} threshold</span>
               </span>
             </div>
             <div className="alert-explanation">{a.explanation}</div>
             <div className="alert-meta">
-              {a.geo?.flag} {a.ip} • {a.source} • {a.user} • {a.model_version}
+              {a.ip} • {a.source} • {a.user} • {a.ruleset_version}
             </div>
             {a.features && (
               <div className="alert-features">
@@ -296,10 +324,12 @@ function AlertsPanel({ alerts }) {
             )}
             {a.soar_response && (
               <div className="alert-actions">
-                {a.soar_response.actions_taken?.map((act, j) => (
-                  <span className="alert-action-tag" key={j}>✓ {act}</span>
+                {a.soar_response.playbook_steps?.map((act, j) => (
+                  <span className="alert-action-tag" key={j}>→ {act}</span>
                 ))}
-                <span className="soar-time-tag">⏱ {a.soar_response.execution_time_ms}ms</span>
+                <span className="soar-time-tag" title="No integration is configured; these steps were selected, not executed.">
+                  playbook selected · not executed
+                </span>
               </div>
             )}
           </div>
@@ -314,27 +344,25 @@ function SOARPanel({ actions }) {
   return (
     <div className="panel">
       <div className="panel-header">
-        <span className="panel-title"><span className="panel-title-icon">🤖</span> SOAR Automation</span>
-        <span className="panel-badge green">{actions.length} responses</span>
+        <span className="panel-title"><span className="panel-title-icon">🤖</span> SOAR Playbooks
+          <span className="model-tag">simulated — no integrations</span></span>
+        <span className="panel-badge amber">{actions.length} selected</span>
       </div>
       <div className="panel-body">
         <div className="soar-list">
           {actions.length === 0 ? (
-            <div className="empty-state">No automated responses yet</div>
+            <div className="empty-state">No playbooks selected yet</div>
           ) : actions.slice(0, 20).map((s, i) => (
             <div className="soar-item" key={s.id || i}>
-              <span className="soar-status-icon">✅</span>
+              <span className="soar-status-icon" title="Playbook matched and selected. No action was executed.">→</span>
               <div className="soar-details">
                 <div className="soar-playbook">
                   <span className={`priority-tag ${s.priority}`}>{s.priority}</span>
                   {s.playbook} — {s.event?.replace(/_/g, ' ')}
                 </div>
-                <div className="soar-actions-list">{s.actions_taken?.join(' → ')}</div>
+                <div className="soar-actions-list">{s.playbook_steps?.join(' → ')}</div>
                 <div className="soar-timing">
-                  ⏱ {s.execution_time_ms}ms total
-                  {s.execution_steps?.map((step, j) => (
-                    <span key={j} className="step-timing"> • {step.action}: {step.duration_ms}ms</span>
-                  ))}
+                  selected in {s.selection_time_us}µs — steps not executed
                 </div>
               </div>
               <span style={{ fontSize: '0.65rem', color: 'var(--text-dim)', fontFamily: 'var(--font-mono)' }}>{s.ip}</span>
@@ -353,15 +381,15 @@ function BlockchainPanel({ blocks, onValidate, validationResult }) {
       <div className="panel-header">
         <span className="panel-title"><span className="panel-title-icon">🔗</span> Audit Ledger <span className="model-tag">SHA-256 hash chain</span></span>
         <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-          <button className="btn btn-validate" onClick={onValidate}>🔍 Validate Chain</button>
+          <button className="btn btn-validate" onClick={onValidate}>🔍 Check Links</button>
           <span className="panel-badge cyan">{blocks.length} blocks</span>
         </div>
       </div>
       {validationResult && (
-        <div className={`chain-validation ${validationResult.valid ? 'valid' : 'invalid'}`}>
-          {validationResult.valid
-            ? `✅ Chain integrity verified — ${validationResult.blocks_checked} blocks validated`
-            : `❌ Chain integrity FAILED — ${validationResult.errors?.length} errors found`}
+        <div className={`chain-validation ${validationResult.links_ok ? 'valid' : 'invalid'}`}>
+          {validationResult.links_ok
+            ? `✅ Link continuity OK — ${validationResult.blocks_checked} blocks' prev_hash pointers match. Content hashes were not recomputed, so this does not detect a modified log entry.`
+            : `❌ Chain broken — ${validationResult.errors?.length} link mismatch(es)`}
         </div>
       )}
       <div className="panel-body">
@@ -372,7 +400,7 @@ function BlockchainPanel({ blocks, onValidate, validationResult }) {
             <div key={b.block_id || i} className="block-card">
               <div className="block-card-header">
                 <span className="block-id">Block #{b.block_id}</span>
-                <span className="block-nonce">Nonce: {b.nonce}</span>
+                <span className="block-nonce" title="Hash of this block's log entry">log {b.log_hash?.slice(0, 8)}…</span>
               </div>
               <div className="block-hash-row">
                 <span className="block-label">Hash</span>
@@ -395,7 +423,7 @@ function BlockchainPanel({ blocks, onValidate, validationResult }) {
 /* ─── Main App ───────────────────────────────────────────────────────────────── */
 export default function App() {
   const [loading, setLoading] = useState(true)
-  const [loadingStage, setLoadingStage] = useState(0)
+  const [connectError, setConnectError] = useState(null)
   const [stats, setStats] = useState(null)
   const [logs, setLogs] = useState([])
   const [alerts, setAlerts] = useState([])
@@ -416,22 +444,28 @@ export default function App() {
     toastTimeout.current = setTimeout(() => setToast(null), 4000)
   }, [])
 
-  // Loading animation
+  // Real connection check: the dashboard appears when the backend answers,
+  // and says so plainly when it does not.
+  const connect = useCallback(async () => {
+    try {
+      const r = await fetch(`${API}/system-health`)
+      if (!r.ok) throw new Error(`HTTP ${r.status} ${r.statusText}`)
+      await r.json()
+      setConnectError(null)
+      setLoading(false)
+    } catch (e) {
+      setConnectError(e.message === 'Failed to fetch' ? 'Connection refused' : e.message)
+    }
+  }, [])
+
   useEffect(() => {
     if (!loading) return
-    const stages = [0, 1, 2, 3, 4, 5, 6]
-    let i = 0
-    const interval = setInterval(() => {
-      i++
-      if (i < stages.length) {
-        setLoadingStage(i)
-      } else {
-        setLoading(false)
-        clearInterval(interval)
-      }
-    }, 400)
-    return () => clearInterval(interval)
-  }, [loading])
+    // Retry on a timer as well as on the button, so the dashboard comes up on
+    // its own once the backend is started.
+    const t = setInterval(connect, 2000)
+    const kickoff = setTimeout(connect, 0)
+    return () => { clearInterval(t); clearTimeout(kickoff) }
+  }, [loading, connect])
 
   // Fetch all data
   const fetchAll = useCallback(async () => {
@@ -458,9 +492,9 @@ export default function App() {
   }, [search, severity, source])
 
   useEffect(() => {
-    fetchAll()
     const interval = setInterval(fetchAll, 2000)
-    return () => clearInterval(interval)
+    const kickoff = setTimeout(fetchAll, 0)
+    return () => { clearInterval(interval); clearTimeout(kickoff) }
   }, [fetchAll])
 
   const simulateAttack = async (type) => {
@@ -475,7 +509,8 @@ export default function App() {
 
   const retrainModel = async () => {
     const res = await fetchJSON(`${API}/retrain`, { method: 'POST' })
-    if (res) showToast(`🧠 ${res.message} — ${res.new_version} (${res.improvement} improvement)`, 'info')
+    if (res?.status === 'not_implemented') showToast(`🧠 ${res.error} ${res.detail}`, 'info')
+    else if (res) showToast(`🧠 ${res.message || 'Retrain requested'}`, 'info')
     fetchAll()
   }
 
@@ -497,7 +532,7 @@ export default function App() {
     fetchAll()
   }
 
-  if (loading) return <LoadingScreen stage={loadingStage} />
+  if (loading) return <ConnectionGate error={connectError} onRetry={connect} />
 
   return (
     <div className="app">
@@ -511,7 +546,9 @@ export default function App() {
           </div>
         </div>
         <div className="header-controls">
-          <span className="model-tag">{stats?.model_version || 'rules-v1.0'}</span>
+          <span className="model-tag" title="Ruleset version — the hash of the detection weights themselves">
+            {stats?.ruleset_version || '—'}
+          </span>
           <span className="header-status"><span className="status-dot"></span>LIVE</span>
           <div className="attack-dropdown">
             <button className="btn btn-attack" onClick={() => setAttackMenuOpen(!attackMenuOpen)}>⚡ Simulate Attack ▾</button>
@@ -531,7 +568,7 @@ export default function App() {
       </header>
 
       {/* Pipeline */}
-      <PipelineBar stats={stats} />
+      <PipelineBar stats={stats} health={health} />
 
       {/* System Health */}
       <HealthPanel health={health} />
@@ -542,8 +579,8 @@ export default function App() {
         <StatCard icon="🚨" value={stats?.total_alerts || 0} label="Alerts Detected" color="red" />
         <StatCard icon="‼️" value={stats?.critical_alerts || 0} label="Critical Alerts" color="critical" />
         <StatCard icon="🔴" value={stats?.high_severity_alerts || 0} label="High Severity" color="amber" />
-        <StatCard icon="🤖" value={stats?.soar_actions_count || 0} label="SOAR Actions" color="green" />
-        <StatCard icon="🔗" value={stats?.blockchain_blocks || 0} label="Blockchain Blocks" color="purple" />
+        <StatCard icon="🤖" value={stats?.soar_actions_count || 0} label="Playbooks Selected" color="green" />
+        <StatCard icon="🔗" value={stats?.total_blocks || 0} label="Ledger Blocks" color="purple" />
       </div>
 
       {/* Charts Row 1: Timeline + Alert Distribution */}
