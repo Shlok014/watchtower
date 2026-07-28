@@ -1,0 +1,48 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Node / frontend
+node_modules/
+frontend/dist/
+frontend/coverage/
+*.local
+npm-debug.log*
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Runtime state & generated data
+backend/data/*.json
+backend/data/*.db
+backend/data/*.db-wal
+backend/data/*.db-shm
+backend/data/incidents/
+!backend/data/.gitkeep
+*.log
+!data/samples/*.log
+
+# ML artifacts — datasets are fetched via scripts/download_data.py,
+# models are rebuilt via `make train`. Neither belongs in git.
+data/raw/
+data/processed/
+data/feeds/
+models/
