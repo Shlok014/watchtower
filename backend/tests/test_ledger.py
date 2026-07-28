@@ -5,9 +5,8 @@ anything routed through the app would re-chain the block and there would be
 nothing to detect.
 """
 
-import pytest
-
 import ledger
+import pytest
 from store import db, repos
 
 
@@ -36,9 +35,19 @@ def chain(tmp_path):
                                        ip,user,message,log_format,origin,rep_verdict,
                                        rep_score,rep_sources,rep_checked,rep_detail)
                    VALUES (?,?,?,?,?,?,?,?,?,?,?,'unlisted',0,'[]',1,'')""",
-                (ts, ts, event["source"], event["event"], event["event_type"],
-                 event["severity"], event["ip"], event["user"], event["message"],
-                 event["log_format"], event["origin"]),
+                (
+                    ts,
+                    ts,
+                    event["source"],
+                    event["event"],
+                    event["event_type"],
+                    event["severity"],
+                    event["ip"],
+                    event["user"],
+                    event["message"],
+                    event["log_format"],
+                    event["origin"],
+                ),
             ).lastrowid
             ledger.append(w, event, eid, ts, ts)
             ids.append(eid)

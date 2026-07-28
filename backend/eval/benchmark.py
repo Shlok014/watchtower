@@ -21,6 +21,7 @@ Three models are reported, including one that does noticeably worse:
 """
 
 import argparse
+import contextlib
 import json
 import platform
 import sys
@@ -29,14 +30,13 @@ from pathlib import Path
 
 import numpy as np
 import sklearn
+from detection.features import build_matrix
+from detection.parser import LogParser
 from sklearn.ensemble import IsolationForest
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import confusion_matrix, precision_recall_fscore_support, roc_auc_score
 from sklearn.model_selection import train_test_split
 from sklearn.tree import DecisionTreeClassifier
-
-from detection.features import build_matrix
-from detection.parser import LogParser
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 OUT_MD = ROOT / "docs" / "METRICS.md"
@@ -45,15 +45,16 @@ SEED = 42
 
 
 def _scores(y_true, y_pred, y_score=None) -> dict:
-    p, r, f1, _ = precision_recall_fscore_support(
-        y_true, y_pred, average="binary", zero_division=0
-    )
+    p, r, f1, _ = precision_recall_fscore_support(y_true, y_pred, average="binary", zero_division=0)
     tn, fp, fn, tp = confusion_matrix(y_true, y_pred, labels=[0, 1]).ravel()
     out = {
         "precision": round(float(p), 4),
         "recall": round(float(r), 4),
         "f1": round(float(f1), 4),
-        "tp": int(tp), "fp": int(fp), "fn": int(fn), "tn": int(tn),
+        "tp": int(tp),
+        "fp": int(fp),
+        "fn": int(fn),
+        "tn": int(tn),
     }
     if y_score is not None:
         try:
@@ -69,12 +70,12 @@ def run(limit=None) -> dict:
     parser = LogParser(stream="hdfs", persist=False)
     X, y, _blocks, template_ids, stats = build_matrix(parser, limit=limit)
     parse_s = time.perf_counter() - t0
-    print(f"  {stats['blocks']:,} blocks, {stats['templates']} templates, "
-          f"{stats['anomaly_rate'] * 100:.2f}% anomalous, {parse_s:.1f}s")
-
-    Xtr, Xte, ytr, yte = train_test_split(
-        X, y, test_size=0.5, random_state=SEED, stratify=y
+    print(
+        f"  {stats['blocks']:,} blocks, {stats['templates']} templates, "
+        f"{stats['anomaly_rate'] * 100:.2f}% anomalous, {parse_s:.1f}s"
     )
+
+    Xtr, Xte, ytr, yte = train_test_split(X, y, test_size=0.5, random_state=SEED, stratify=y)
     results = {}
 
     print("Training …", flush=True)
@@ -116,8 +117,12 @@ def run(limit=None) -> dict:
             "subset": "full" if limit is None else f"first {limit:,} lines",
             **stats,
         },
-        "split": {"method": "stratified 50/50", "seed": SEED,
-                  "train": int(len(ytr)), "test": int(len(yte))},
+        "split": {
+            "method": "stratified 50/50",
+            "seed": SEED,
+            "train": int(len(ytr)),
+            "test": int(len(yte)),
+        },
         "parsing": {"seconds": round(parse_s, 1), "lines_per_second": int(eps)},
         "models": results,
         "environment": {
@@ -227,12 +232,11 @@ def main(argv=None) -> int:
     args = ap.parse_args(argv)
 
     from eval.parsing import evaluate
+
     parsing_rows = []
     for name in ("HDFS", "OpenSSH"):
-        try:
+        with contextlib.suppress(FileNotFoundError):
             parsing_rows.append(evaluate(name))
-        except FileNotFoundError:
-            pass
 
     hdfs = Path(__file__).resolve().parent.parent / "data" / "datasets" / "HDFS.log"
     if not hdfs.exists():
@@ -240,16 +244,24 @@ def main(argv=None) -> int:
         print("Writing the parsing-only section.", file=sys.stderr)
         write_markdown(
             {
-                "dataset": {"name": "loghub HDFS_v1", "subset": "NOT DOWNLOADED",
-                            "lines_read": 0, "blocks": 0, "anomalous_blocks": 0,
-                            "anomaly_rate": 0, "templates": 0},
+                "dataset": {
+                    "name": "loghub HDFS_v1",
+                    "subset": "NOT DOWNLOADED",
+                    "lines_read": 0,
+                    "blocks": 0,
+                    "anomalous_blocks": 0,
+                    "anomaly_rate": 0,
+                    "templates": 0,
+                },
                 "split": {"method": "—", "seed": SEED, "train": 0, "test": 0},
                 "parsing": {"seconds": 0, "lines_per_second": 0},
                 "models": {},
-                "environment": {"python": sys.version.split()[0],
-                                "sklearn": sklearn.__version__,
-                                "numpy": np.__version__,
-                                "platform": f"{platform.system()} {platform.machine()}"},
+                "environment": {
+                    "python": sys.version.split()[0],
+                    "sklearn": sklearn.__version__,
+                    "numpy": np.__version__,
+                    "platform": f"{platform.system()} {platform.machine()}",
+                },
             },
             parsing_rows,
         )

@@ -8,16 +8,14 @@ import os
 import random
 import threading
 import time
-from collections import defaultdict
-from datetime import datetime, timedelta, timezone
-
-from flask import Flask, abort, jsonify, request
-from flask_cors import CORS
+from datetime import UTC, datetime
 
 import ledger
 import store
 import telemetry
 import threatintel
+from flask import Flask, abort, jsonify, request
+from flask_cors import CORS
 from threatintel import pool as ip_pool
 
 app = Flask(__name__)
@@ -49,8 +47,12 @@ ALERT_THRESHOLD = 0.45
 # threatintel package). Geolocation is simply gone: an honest offline geo-IP
 # answer needs a licensed database, and a fabricated one is worse than none.
 INTERNAL_IPS = [
-    "192.168.1.10", "192.168.1.20", "192.168.1.30",
-    "10.0.0.5", "10.0.0.15", "172.16.0.100",
+    "192.168.1.10",
+    "192.168.1.20",
+    "192.168.1.30",
+    "10.0.0.5",
+    "10.0.0.15",
+    "172.16.0.100",
 ]
 
 # Populated at startup from the cached Tor exit list; see threatintel/pool.py
@@ -63,54 +65,104 @@ def refresh_ip_pools() -> None:
     global EXTERNAL_IPS, IP_POOL_NOTE
     EXTERNAL_IPS, IP_POOL_NOTE = ip_pool.build_provenance_pool(threatintel.get_index())
 
+
 # ─── Source-Specific Configuration ──────────────────────────────────────────────
 SOURCE_PROFILES = {
     "linux-server": {
-        "events": [("login_success", 25), ("failed_login", 15), ("file_access", 20),
-                   ("privilege_escalation", 3), ("normal_traffic", 30), ("malware_detected", 2),
-                   ("brute_force", 3), ("suspicious_ip", 2)],
+        "events": [
+            ("login_success", 25),
+            ("failed_login", 15),
+            ("file_access", 20),
+            ("privilege_escalation", 3),
+            ("normal_traffic", 30),
+            ("malware_detected", 2),
+            ("brute_force", 3),
+            ("suspicious_ip", 2),
+        ],
         "users": ["root", "admin", "jdoe", "ssmith", "backup_svc"],
         "log_format": "syslog",
     },
     "windows-dc": {
-        "events": [("login_success", 30), ("failed_login", 20), ("privilege_escalation", 4),
-                   ("normal_traffic", 20), ("file_access", 15), ("brute_force", 5),
-                   ("malware_detected", 3), ("suspicious_ip", 3)],
+        "events": [
+            ("login_success", 30),
+            ("failed_login", 20),
+            ("privilege_escalation", 4),
+            ("normal_traffic", 20),
+            ("file_access", 15),
+            ("brute_force", 5),
+            ("malware_detected", 3),
+            ("suspicious_ip", 3),
+        ],
         "users": ["admin", "sysadmin", "jdoe", "ssmith", "guest"],
         "log_format": "windows_event",
     },
     "firewall-01": {
-        "events": [("normal_traffic", 35), ("suspicious_ip", 10), ("port_scan", 12),
-                   ("data_exfiltration", 5), ("brute_force", 8), ("login_success", 15),
-                   ("failed_login", 10), ("malware_detected", 5)],
+        "events": [
+            ("normal_traffic", 35),
+            ("suspicious_ip", 10),
+            ("port_scan", 12),
+            ("data_exfiltration", 5),
+            ("brute_force", 8),
+            ("login_success", 15),
+            ("failed_login", 10),
+            ("malware_detected", 5),
+        ],
         "users": ["system", "firewall_svc"],
         "log_format": "cef",
     },
     "web-proxy": {
-        "events": [("normal_traffic", 40), ("suspicious_ip", 8), ("data_exfiltration", 6),
-                   ("login_success", 20), ("failed_login", 10), ("malware_detected", 4),
-                   ("port_scan", 7), ("file_access", 5)],
+        "events": [
+            ("normal_traffic", 40),
+            ("suspicious_ip", 8),
+            ("data_exfiltration", 6),
+            ("login_success", 20),
+            ("failed_login", 10),
+            ("malware_detected", 4),
+            ("port_scan", 7),
+            ("file_access", 5),
+        ],
         "users": ["proxy_svc", "jdoe", "ssmith"],
         "log_format": "squid",
     },
     "mail-server": {
-        "events": [("login_success", 30), ("failed_login", 15), ("normal_traffic", 30),
-                   ("suspicious_ip", 5), ("malware_detected", 8), ("data_exfiltration", 4),
-                   ("file_access", 5), ("brute_force", 3)],
+        "events": [
+            ("login_success", 30),
+            ("failed_login", 15),
+            ("normal_traffic", 30),
+            ("suspicious_ip", 5),
+            ("malware_detected", 8),
+            ("data_exfiltration", 4),
+            ("file_access", 5),
+            ("brute_force", 3),
+        ],
         "users": ["postmaster", "jdoe", "ssmith", "admin"],
         "log_format": "syslog",
     },
     "iot-gateway": {
-        "events": [("normal_traffic", 40), ("suspicious_ip", 10), ("port_scan", 15),
-                   ("malware_detected", 10), ("data_exfiltration", 8), ("failed_login", 7),
-                   ("login_success", 5), ("brute_force", 5)],
+        "events": [
+            ("normal_traffic", 40),
+            ("suspicious_ip", 10),
+            ("port_scan", 15),
+            ("malware_detected", 10),
+            ("data_exfiltration", 8),
+            ("failed_login", 7),
+            ("login_success", 5),
+            ("brute_force", 5),
+        ],
         "users": ["device_001", "device_042", "device_117", "iot_admin"],
         "log_format": "json",
     },
     "db-server": {
-        "events": [("login_success", 25), ("failed_login", 10), ("file_access", 25),
-                   ("privilege_escalation", 5), ("normal_traffic", 20), ("data_exfiltration", 5),
-                   ("suspicious_ip", 5), ("brute_force", 5)],
+        "events": [
+            ("login_success", 25),
+            ("failed_login", 10),
+            ("file_access", 25),
+            ("privilege_escalation", 5),
+            ("normal_traffic", 20),
+            ("data_exfiltration", 5),
+            ("suspicious_ip", 5),
+            ("brute_force", 5),
+        ],
         "users": ["dba", "app_svc", "admin", "backup_svc"],
         "log_format": "oracle_audit",
     },
@@ -118,17 +170,18 @@ SOURCE_PROFILES = {
 SOURCES = list(SOURCE_PROFILES.keys())
 
 EVENT_TYPES = {
-    "login_success":        {"severity": "low",      "category": "authentication"},
-    "failed_login":         {"severity": "medium",   "category": "authentication"},
-    "brute_force":          {"severity": "critical",  "category": "attack"},
-    "suspicious_ip":        {"severity": "high",     "category": "network"},
-    "port_scan":            {"severity": "high",     "category": "reconnaissance"},
-    "malware_detected":     {"severity": "critical",  "category": "malware"},
-    "file_access":          {"severity": "low",      "category": "file_system"},
-    "privilege_escalation": {"severity": "critical",  "category": "attack"},
-    "data_exfiltration":    {"severity": "critical",  "category": "data_leak"},
-    "normal_traffic":       {"severity": "low",      "category": "network"},
+    "login_success": {"severity": "low", "category": "authentication"},
+    "failed_login": {"severity": "medium", "category": "authentication"},
+    "brute_force": {"severity": "critical", "category": "attack"},
+    "suspicious_ip": {"severity": "high", "category": "network"},
+    "port_scan": {"severity": "high", "category": "reconnaissance"},
+    "malware_detected": {"severity": "critical", "category": "malware"},
+    "file_access": {"severity": "low", "category": "file_system"},
+    "privilege_escalation": {"severity": "critical", "category": "attack"},
+    "data_exfiltration": {"severity": "critical", "category": "data_leak"},
+    "normal_traffic": {"severity": "low", "category": "network"},
 }
+
 
 # ─── Tamper-Evident Audit Ledger ───────────────────────────────────────────────
 # Implementation lives in ledger.py. See that module for why the digest covers
@@ -144,14 +197,16 @@ def validate_chain():
     """Full verification: every digest recomputed from the live event rows."""
     result = ledger.verify(store.db.connect()).as_dict()
     count, oldest, newest = store.repos.ledger_bounds()
-    result.update({
-        "chain_length": count,
-        "latest_hash": newest,
-        "genesis_hash": oldest,
-        # Kept so the existing dashboard panel keeps rendering; it now means
-        # "the whole chain verified", not "two stored strings matched".
-        "links_ok": result["ok"],
-    })
+    result.update(
+        {
+            "chain_length": count,
+            "latest_hash": newest,
+            "genesis_hash": oldest,
+            # Kept so the existing dashboard panel keeps rendering; it now means
+            # "the whole chain verified", not "two stored strings matched".
+            "links_ok": result["ok"],
+        }
+    )
     return result
 
 
@@ -200,17 +255,20 @@ EVENT_WEIGHTS = {
 FAILED_LOGIN_RULES = ((5, 0.40), (3, 0.20))
 FREQUENCY_RULES = ((15, 0.20), (8, 0.10))
 
-RULESET_VERSION = "rules-" + hashlib.sha256(
-    json.dumps(
-        {
-            "events": EVENT_WEIGHTS,
-            "failed_login": FAILED_LOGIN_RULES,
-            "frequency": FREQUENCY_RULES,
-            "threshold": ALERT_THRESHOLD,
-        },
-        sort_keys=True,
-    ).encode()
-).hexdigest()[:8]
+RULESET_VERSION = (
+    "rules-"
+    + hashlib.sha256(
+        json.dumps(
+            {
+                "events": EVENT_WEIGHTS,
+                "failed_login": FAILED_LOGIN_RULES,
+                "frequency": FREQUENCY_RULES,
+                "threshold": ALERT_THRESHOLD,
+            },
+            sort_keys=True,
+        ).encode()
+    ).hexdigest()[:8]
+)
 
 FAILED_LOGIN_WINDOW_S = 60
 FREQUENCY_WINDOW_S = 30
@@ -333,14 +391,44 @@ def rules_detect(conn, log_entry, ingested_ts_ms):
 # happened. Nothing here contacts a firewall, a mail server or a ticket system,
 # so these are the steps a playbook *would* run.
 SOAR_PLAYBOOKS = {
-    "brute_force":          {"actions": ["Block IP", "Terminate session", "Send alert email", "Open incident ticket"], "priority": "P1"},
-    "suspicious_ip":        {"actions": ["Block IP", "Update firewall rule", "Send alert email"], "priority": "P2"},
-    "malware_detected":     {"actions": ["Isolate host", "Trigger AV scan", "Send alert email", "Open incident ticket"], "priority": "P1"},
-    "port_scan":            {"actions": ["Block IP", "Update IDS rule", "Send alert email"], "priority": "P2"},
-    "privilege_escalation": {"actions": ["Terminate session", "Lock account", "Send alert email", "Open incident ticket", "Start forensics"], "priority": "P1"},
-    "data_exfiltration":    {"actions": ["Isolate network segment", "Terminate session", "Send alert email", "Start forensics"], "priority": "P1"},
-    "failed_login":         {"actions": ["Send alert email", "Enable account monitoring"], "priority": "P3"},
+    "brute_force": {
+        "actions": ["Block IP", "Terminate session", "Send alert email", "Open incident ticket"],
+        "priority": "P1",
+    },
+    "suspicious_ip": {
+        "actions": ["Block IP", "Update firewall rule", "Send alert email"],
+        "priority": "P2",
+    },
+    "malware_detected": {
+        "actions": ["Isolate host", "Trigger AV scan", "Send alert email", "Open incident ticket"],
+        "priority": "P1",
+    },
+    "port_scan": {"actions": ["Block IP", "Update IDS rule", "Send alert email"], "priority": "P2"},
+    "privilege_escalation": {
+        "actions": [
+            "Terminate session",
+            "Lock account",
+            "Send alert email",
+            "Open incident ticket",
+            "Start forensics",
+        ],
+        "priority": "P1",
+    },
+    "data_exfiltration": {
+        "actions": [
+            "Isolate network segment",
+            "Terminate session",
+            "Send alert email",
+            "Start forensics",
+        ],
+        "priority": "P1",
+    },
+    "failed_login": {
+        "actions": ["Send alert email", "Enable account monitoring"],
+        "priority": "P3",
+    },
 }
+
 
 def soar_respond(alert_entry):
     """Select a response playbook for an alert.
@@ -355,26 +443,26 @@ def soar_respond(alert_entry):
     field says the step was selected rather than performed.
     """
     event = alert_entry["event"]
-    playbook = SOAR_PLAYBOOKS.get(
-        event, {"actions": ["Notify", "Log to SIEM"], "priority": "P3"}
-    )
+    playbook = SOAR_PLAYBOOKS.get(event, {"actions": ["Notify", "Log to SIEM"], "priority": "P3"})
     actions = playbook["actions"]
 
-    ts = datetime.now(timezone.utc)
+    ts = datetime.now(UTC)
     steps = []
     t_start = time.perf_counter()
     for action in actions:
         t0 = time.perf_counter()
         # This is where a real integration would run. There isn't one.
         selected = {"action": action, "executed": False}
-        steps.append({
-            "action": action,
-            "status": "selected",
-            "executed": False,
-            "duration_us": round((time.perf_counter() - t0) * 1e6, 1),
-            "detail": "no integration configured — step selected, not executed",
-            **{k: v for k, v in selected.items() if k not in ("action", "executed")},
-        })
+        steps.append(
+            {
+                "action": action,
+                "status": "selected",
+                "executed": False,
+                "duration_us": round((time.perf_counter() - t0) * 1e6, 1),
+                "detail": "no integration configured — step selected, not executed",
+                **{k: v for k, v in selected.items() if k not in ("action", "executed")},
+            }
+        )
     total_us = round((time.perf_counter() - t_start) * 1e6, 1)
 
     response = {
@@ -398,7 +486,7 @@ def soar_respond(alert_entry):
 def create_alert(conn, log_entry, detection_result, event_id):
     """Create an alert from an anomalous log."""
     alert = {
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "event": log_entry["event"],
         "source": log_entry["source"],
         "ip": log_entry["ip"],
@@ -435,11 +523,15 @@ def generate_random_log():
     source = random.choice(SOURCES)
     profile = SOURCE_PROFILES[source]
 
-    events, weights = zip(*profile["events"])
+    events, weights = zip(*profile["events"], strict=False)
     event = random.choices(events, weights=weights, k=1)[0]
 
     external = event in (
-        "suspicious_ip", "brute_force", "port_scan", "data_exfiltration", "malware_detected"
+        "suspicious_ip",
+        "brute_force",
+        "port_scan",
+        "data_exfiltration",
+        "malware_detected",
     )
     if external:
         ip = random.choice(ip_pool.pool_for_event(event, EXTERNAL_IPS))
@@ -455,16 +547,16 @@ def generate_random_log():
         "brute_force": f"[{fmt}] Multiple rapid auth attempts from {ip}",
         "suspicious_ip": f"[{fmt}] Connection from flagged IP {ip}",
         "port_scan": f"[{fmt}] Sequential port scan from {ip} ports 1-1024",
-        "malware_detected": f"[{fmt}] Malware signature [Trojan.Gen.{random.randint(1,99)}] detected from {ip}",
+        "malware_detected": f"[{fmt}] Malware signature [Trojan.Gen.{random.randint(1, 99)}] detected from {ip}",
         "file_access": f"[{fmt}] {user} accessed /etc/shadow from {ip}",
         "privilege_escalation": f"[{fmt}] sudo escalation by {user} from {ip}",
-        "data_exfiltration": f"[{fmt}] {random.randint(50,500)}MB transfer to external {ip}",
+        "data_exfiltration": f"[{fmt}] {random.randint(50, 500)}MB transfer to external {ip}",
         "normal_traffic": f"[{fmt}] Standard {random.choice(['HTTP', 'HTTPS', 'DNS', 'NTP'])} traffic from {ip}",
     }
 
     return {
         # No id here: it is the events table's rowid, assigned on insert.
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "source": source,
         "event": event,
         "ip": ip,
@@ -574,7 +666,6 @@ def _query_int(name: str, default: int, lo: int, hi: int) -> int:
         abort(400, description=f"{name} must be an integer")
 
 
-
 @app.route("/api/logs", methods=["GET"])
 def get_logs():
     return jsonify(
@@ -603,35 +694,37 @@ def get_stats():
     """
     st = store.repos.stats()
     totals, retained = st["totals"], st["retained"]
-    return jsonify({
-        # Lifetime totals, from the persisted counters table. Returning a
-        # row count here would make every "total" fall the moment retention
-        # pruned an old event.
-        "total_logs": totals["events"],
-        "total_alerts": totals["alerts"],
-        "total_blocks": totals["blocks"],
-        "soar_actions_count": totals["soar"],
-        # ...and what is currently on disk, under names that say so.
-        "logs_retained": retained["events"],
-        "alerts_retained": retained["alerts"],
-        "blocks_retained": retained["blocks"],
-        # Derived from the live policy, never a literal. Hardcoded, this string
-        # would have gone on describing the in-memory ring buffers it was
-        # written for — in the very field added to stop the app misdescribing
-        # its own storage.
-        "retention_note": store.retention_note(),
-        "high_severity_alerts": st["high_severity_alerts"],
-        "critical_alerts": st["critical_alerts"],
-        "medium_severity_alerts": st["medium_severity_alerts"],
-        "ruleset_version": RULESET_VERSION,
-        "logs_over_time": st["timeline"],
-        "alert_distribution": st["alert_distribution"],
-        "event_distribution": st["event_distribution"],
-        "source_distribution": st["source_distribution"],
-        "origin_distribution": st["origin_distribution"],
-        "uptime_seconds": telemetry.uptime_seconds(),
-        "sources": SOURCES,
-    })
+    return jsonify(
+        {
+            # Lifetime totals, from the persisted counters table. Returning a
+            # row count here would make every "total" fall the moment retention
+            # pruned an old event.
+            "total_logs": totals["events"],
+            "total_alerts": totals["alerts"],
+            "total_blocks": totals["blocks"],
+            "soar_actions_count": totals["soar"],
+            # ...and what is currently on disk, under names that say so.
+            "logs_retained": retained["events"],
+            "alerts_retained": retained["alerts"],
+            "blocks_retained": retained["blocks"],
+            # Derived from the live policy, never a literal. Hardcoded, this string
+            # would have gone on describing the in-memory ring buffers it was
+            # written for — in the very field added to stop the app misdescribing
+            # its own storage.
+            "retention_note": store.retention_note(),
+            "high_severity_alerts": st["high_severity_alerts"],
+            "critical_alerts": st["critical_alerts"],
+            "medium_severity_alerts": st["medium_severity_alerts"],
+            "ruleset_version": RULESET_VERSION,
+            "logs_over_time": st["timeline"],
+            "alert_distribution": st["alert_distribution"],
+            "event_distribution": st["event_distribution"],
+            "source_distribution": st["source_distribution"],
+            "origin_distribution": st["origin_distribution"],
+            "uptime_seconds": telemetry.uptime_seconds(),
+            "sources": SOURCES,
+        }
+    )
 
 
 @app.route("/api/blockchain", methods=["GET"])
@@ -676,7 +769,9 @@ def simulate_attack():
             "label": "DDoS Attack",
         },
         "insider_threat": {
-            "events": ["privilege_escalation"] * 3 + ["data_exfiltration"] * 4 + ["file_access"] * 3,
+            "events": ["privilege_escalation"] * 3
+            + ["data_exfiltration"] * 4
+            + ["file_access"] * 3,
             "ips": INTERNAL_IPS[:2],
             "users": ["jdoe", "guest"],
             "count": (8, 12),
@@ -690,8 +785,15 @@ def simulate_attack():
             "label": "Malware Outbreak",
         },
         "mixed": {
-            "events": ["brute_force", "port_scan", "suspicious_ip", "malware_detected",
-                       "privilege_escalation", "data_exfiltration", "failed_login"],
+            "events": [
+                "brute_force",
+                "port_scan",
+                "suspicious_ip",
+                "malware_detected",
+                "privilege_escalation",
+                "data_exfiltration",
+                "failed_login",
+            ],
             "ips": None,
             "users": ["root", "admin", "guest"],
             "count": (8, 15),
@@ -709,7 +811,7 @@ def simulate_attack():
         user = random.choice(profile["users"])
         source = random.choice(SOURCES)
         raw = {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "source": source,
             "event": event,
             "ip": ip,
@@ -720,13 +822,15 @@ def simulate_attack():
         }
         generated.append(process_log(raw))
 
-    return jsonify({
-        "status": "success",
-        "attack_type": attack_type,
-        "label": profile["label"],
-        "message": f"{profile['label']} triggered — {len(generated)} malicious events",
-        "events_generated": len(generated),
-    })
+    return jsonify(
+        {
+            "status": "success",
+            "attack_type": attack_type,
+            "label": profile["label"],
+            "message": f"{profile['label']} triggered — {len(generated)} malicious events",
+            "events_generated": len(generated),
+        }
+    )
 
 
 @app.route("/api/retrain", methods=["POST"])
@@ -744,17 +848,19 @@ def retrain_model():
     A trained model and a real evaluation against a labelled benchmark are the
     next piece of work; until one exists, this returns 501 rather than a number.
     """
-    return jsonify({
-        "status": "not_implemented",
-        "error": "No trainable model exists in this build.",
-        "detail": (
-            "Detection is a rule set versioned by content hash "
-            f"({RULESET_VERSION}); changing it means editing the weights, not "
-            "retraining. Accuracy figures will appear here once a model is "
-            "trained and evaluated against a labelled dataset."
-        ),
-        "ruleset_version": RULESET_VERSION,
-    }), 501
+    return jsonify(
+        {
+            "status": "not_implemented",
+            "error": "No trainable model exists in this build.",
+            "detail": (
+                "Detection is a rule set versioned by content hash "
+                f"({RULESET_VERSION}); changing it means editing the weights, not "
+                "retraining. Accuracy figures will appear here once a model is "
+                "trained and evaluated against a labelled dataset."
+            ),
+            "ruleset_version": RULESET_VERSION,
+        }
+    ), 501
 
 
 @app.route("/api/reset", methods=["POST"])
@@ -772,16 +878,18 @@ def reset_all():
     store.db.checkpoint()
     telemetry.reset()
     total = sum(deleted.values())
-    return jsonify({
-        "status": "success",
-        "deleted": deleted,
-        "message": (
-            f"Deleted {total} rows — "
-            f"{deleted['events']} events, {deleted['alerts']} alerts, "
-            f"{deleted['ledger']} ledger blocks, "
-            f"{deleted['soar_executions']} SOAR records"
-        ),
-    })
+    return jsonify(
+        {
+            "status": "success",
+            "deleted": deleted,
+            "message": (
+                f"Deleted {total} rows — "
+                f"{deleted['events']} events, {deleted['alerts']} alerts, "
+                f"{deleted['ledger']} ledger blocks, "
+                f"{deleted['soar_executions']} SOAR records"
+            ),
+        }
+    )
 
 
 def _generator_alive() -> bool:
@@ -816,20 +924,25 @@ def _component_health():
             "samples": st["samples"],
         }
 
-    return [
-        stage("Ingest Queue", "📡", "ingest", f"{c['events']} ingested", gen_status),
-        stage("Normalization", "⚙️", "normalize", f"{retained} retained", gen_status),
-        stage(
-            "Detection Engine",
-            "🧠",
-            "detect",
-            RULESET_VERSION if feed_ok else "no threat feed",
-            "running" if feed_ok else "degraded",
-        ),
-        stage("Alert System", "🚨", "alert", f"{c['alerts']} raised"),
-        stage("SOAR Engine", "🤖", "alert", f"{c['soar']} playbooks selected", "simulated"),
-        stage("Audit Ledger", "🔗", "ledger", f"{c['blocks']} blocks"),
-    ], feed_ok, stale, alive
+    return (
+        [
+            stage("Ingest Queue", "📡", "ingest", f"{c['events']} ingested", gen_status),
+            stage("Normalization", "⚙️", "normalize", f"{retained} retained", gen_status),
+            stage(
+                "Detection Engine",
+                "🧠",
+                "detect",
+                RULESET_VERSION if feed_ok else "no threat feed",
+                "running" if feed_ok else "degraded",
+            ),
+            stage("Alert System", "🚨", "alert", f"{c['alerts']} raised"),
+            stage("SOAR Engine", "🤖", "alert", f"{c['soar']} playbooks selected", "simulated"),
+            stage("Audit Ledger", "🔗", "ledger", f"{c['blocks']} blocks"),
+        ],
+        feed_ok,
+        stale,
+        alive,
+    )
 
 
 @app.route("/api/system-health", methods=["GET"])
@@ -870,23 +983,25 @@ def pipeline_status():
 def threat_intel_status():
     """Provenance for the reputation data: which feed, how many entries, how old."""
     idx = threatintel.get_index()
-    return jsonify({
-        "usable": idx.usable,
-        "feeds": [
-            {
-                "name": s.name,
-                "state": s.state,
-                "entries": s.entries,
-                "fetched_at": s.fetched_at,
-                "age_hours": round(s.age_hours, 2) if s.age_hours is not None else None,
-                "citation": s.citation,
-                "homepage": s.homepage,
-                "error": s.error,
-            }
-            for s in idx.states.values()
-        ],
-        "demo_address_pool": {"addresses": list(EXTERNAL_IPS), "note": IP_POOL_NOTE},
-    })
+    return jsonify(
+        {
+            "usable": idx.usable,
+            "feeds": [
+                {
+                    "name": s.name,
+                    "state": s.state,
+                    "entries": s.entries,
+                    "fetched_at": s.fetched_at,
+                    "age_hours": round(s.age_hours, 2) if s.age_hours is not None else None,
+                    "citation": s.citation,
+                    "homepage": s.homepage,
+                    "error": s.error,
+                }
+                for s in idx.states.values()
+            ],
+            "demo_address_pool": {"addresses": list(EXTERNAL_IPS), "note": IP_POOL_NOTE},
+        }
+    )
 
 
 # ─── Start ─────────────────────────────────────────────────────────────────────
@@ -903,7 +1018,7 @@ def start_background() -> None:
     global _generator_thread
     if _generator_thread is not None:
         return
-    store.db.connect()          # creates/validates the schema once
+    store.db.connect()  # creates/validates the schema once
     refresh_ip_pools()
     _generator_thread = threading.Thread(
         target=log_generator_loop, name="log-generator", daemon=True

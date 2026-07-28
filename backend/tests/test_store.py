@@ -5,12 +5,10 @@ would fail if that defect were reintroduced — a test that passes either way is
 worse than no test.
 """
 
-import json
 import sqlite3
 import threading
 
 import pytest
-
 from store import db, repos
 
 
@@ -28,9 +26,17 @@ def store_db(tmp_path):
 def _event(ip="9.9.9.9", event="failed_login", origin="synthetic", ts=None, ing=None):
     ts = ts or repos.now_ms()
     return dict(
-        ts_ms=ts, ingested_ts_ms=ing if ing is not None else ts, source="linux-server",
-        event=event, event_type="authentication", severity="medium", ip=ip, user="root",
-        message="m", log_format="syslog", origin=origin,
+        ts_ms=ts,
+        ingested_ts_ms=ing if ing is not None else ts,
+        source="linux-server",
+        event=event,
+        event_type="authentication",
+        severity="medium",
+        ip=ip,
+        user="root",
+        message="m",
+        log_format="syslog",
+        origin=origin,
     )
 
 
@@ -62,9 +68,8 @@ def test_invalid_origins_rejected(store_db, origin):
     accepts REPLAY: and Replay: as well — two spellings of one provenance, which
     makes every GROUP BY origin under-count replayed data.
     """
-    with pytest.raises(sqlite3.IntegrityError):
-        with db.write() as conn:
-            _insert(conn, origin=origin)
+    with pytest.raises(sqlite3.IntegrityError), db.write() as conn:
+        _insert(conn, origin=origin)
 
 
 # ── the race the lists had ───────────────────────────────────────────────────
@@ -191,10 +196,9 @@ def test_failed_transaction_rolls_back_and_connection_stays_usable(store_db):
         _insert(conn)
     before = db.connect().execute("SELECT count(*) FROM events").fetchone()[0]
 
-    with pytest.raises(RuntimeError):
-        with db.write() as conn:
-            _insert(conn, ip="2.2.2.2")
-            raise RuntimeError("boom")
+    with pytest.raises(RuntimeError), db.write() as conn:
+        _insert(conn, ip="2.2.2.2")
+        raise RuntimeError("boom")
 
     conn = db.connect()
     assert not conn.in_transaction, "a wedged connection breaks every later write"

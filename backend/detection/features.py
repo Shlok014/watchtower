@@ -57,8 +57,11 @@ def build_matrix(parser, limit: int | None = None, progress_every: int = 500_000
             for b in set(blocks):
                 per_block[b][cid] += 1
             if progress_every and lines % progress_every == 0:
-                print(f"    {lines:>10,} lines, {len(per_block):>7,} blocks, "
-                      f"{len(seen_templates)} templates", flush=True)
+                print(
+                    f"    {lines:>10,} lines, {len(per_block):>7,} blocks, "
+                    f"{len(seen_templates)} templates",
+                    flush=True,
+                )
 
     # Keep only blocks we have a ground-truth label for.
     block_ids = [b for b in per_block if b in labels]

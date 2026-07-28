@@ -65,9 +65,7 @@ GENESIS_PREV = "0" * 64
 
 def canonical(event: dict) -> str:
     """Serialise an event to the exact bytes that get hashed."""
-    return json.dumps(
-        {k: event.get(k) for k in CANON_FIELDS}, sort_keys=True, default=str
-    )
+    return json.dumps({k: event.get(k) for k in CANON_FIELDS}, sort_keys=True, default=str)
 
 
 def payload_hash(event: dict) -> str:
@@ -81,9 +79,7 @@ def block_hash(height: int, ts_ms: int, prev_hash: str, payload_digest: str) -> 
     block breaks it. Under the old scheme the digest covered only
     prev_hash + payload, leaving both fields freely editable.
     """
-    return hashlib.sha256(
-        f"{height}|{ts_ms}|{prev_hash}|{payload_digest}".encode()
-    ).hexdigest()
+    return hashlib.sha256(f"{height}|{ts_ms}|{prev_hash}|{payload_digest}".encode()).hexdigest()
 
 
 @dataclass

@@ -10,6 +10,7 @@ shared connection with ``check_same_thread=False`` would need a global lock that
 serialises reads behind writes, which is the thing WAL exists to avoid.
 """
 
+import contextlib
 import os
 import sqlite3
 import threading
@@ -41,10 +42,8 @@ def path() -> Path:
 def _close_local() -> None:
     conn = getattr(_local, "conn", None)
     if conn is not None:
-        try:
+        with contextlib.suppress(sqlite3.Error):
             conn.close()
-        except sqlite3.Error:
-            pass
     _local.conn = None
     _local.path = None
 
@@ -104,9 +103,7 @@ def _apply_schema(conn: sqlite3.Connection) -> None:
         "ON CONFLICT(key) DO NOTHING",
         (SCHEMA_VERSION,),
     )
-    found = conn.execute(
-        "SELECT value FROM schema_meta WHERE key = 'schema_version'"
-    ).fetchone()[0]
+    found = conn.execute("SELECT value FROM schema_meta WHERE key = 'schema_version'").fetchone()[0]
     if found != SCHEMA_VERSION:
         raise RuntimeError(
             f"database at {_db_path} has schema version {found}, this build expects "
@@ -161,10 +158,8 @@ def write() -> Transaction:
 
 def checkpoint() -> None:
     """Truncate the WAL. Unbounded WAL growth is a real problem on a small disk."""
-    try:
+    with contextlib.suppress(sqlite3.Error):
         connect().execute("PRAGMA wal_checkpoint(TRUNCATE)")
-    except sqlite3.Error:
-        pass
 
 
 def close_all() -> None:

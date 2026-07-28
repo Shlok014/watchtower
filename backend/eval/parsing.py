@@ -34,7 +34,7 @@ def load_ground_truth(name: str):
 def grouping_accuracy(predicted, truth) -> float:
     """Fraction of lines whose predicted group exactly equals its true group."""
     by_pred, by_true = defaultdict(set), defaultdict(set)
-    for i, (p, t) in enumerate(zip(predicted, truth)):
+    for i, (p, t) in enumerate(zip(predicted, truth, strict=False)):
         by_pred[p].add(i)
         by_true[t].add(i)
     correct = 0

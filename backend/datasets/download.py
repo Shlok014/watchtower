@@ -17,7 +17,6 @@ Sources
 import argparse
 import hashlib
 import ssl
-import sys
 import urllib.request
 import zipfile
 from pathlib import Path

@@ -9,7 +9,7 @@ an empty cell. The IP-reputation column, the one thing the README marks
 """
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from . import db
 
@@ -19,11 +19,11 @@ RETENTION_HOURS = 24
 
 
 def now_ms() -> int:
-    return int(datetime.now(timezone.utc).timestamp() * 1000)
+    return int(datetime.now(UTC).timestamp() * 1000)
 
 
 def to_iso(ms: int) -> str:
-    return datetime.fromtimestamp(ms / 1000, timezone.utc).isoformat()
+    return datetime.fromtimestamp(ms / 1000, UTC).isoformat()
 
 
 def from_iso(value: str) -> int:
@@ -291,8 +291,15 @@ def insert_soar(conn, response: dict, alert_id: int) -> int:
                                    duration_us, detail)
            VALUES (?,?,?,?,?,?,?)""",
         [
-            (exec_id, i, s["action"], s["status"], 1 if s["executed"] else 0,
-             s["duration_us"], s["detail"])
+            (
+                exec_id,
+                i,
+                s["action"],
+                s["status"],
+                1 if s["executed"] else 0,
+                s["duration_us"],
+                s["detail"],
+            )
             for i, s in enumerate(response["execution_steps"])
         ],
     )
@@ -347,12 +354,12 @@ def ledger_bounds() -> tuple[int, str | None, str | None]:
     n = conn.execute("SELECT count(*) FROM ledger").fetchone()[0]
     if not n:
         return 0, None, None
-    oldest = conn.execute(
-        "SELECT hash FROM ledger ORDER BY block_id ASC LIMIT 1"
-    ).fetchone()["hash"]
-    newest = conn.execute(
-        "SELECT hash FROM ledger ORDER BY block_id DESC LIMIT 1"
-    ).fetchone()["hash"]
+    oldest = conn.execute("SELECT hash FROM ledger ORDER BY block_id ASC LIMIT 1").fetchone()[
+        "hash"
+    ]
+    newest = conn.execute("SELECT hash FROM ledger ORDER BY block_id DESC LIMIT 1").fetchone()[
+        "hash"
+    ]
     return n, oldest, newest
 
 
@@ -392,7 +399,7 @@ def stats(buckets: int = 30, bucket_seconds: int = 10) -> dict:
         end_ms = start + (i + 1) * width
         timeline.append(
             {
-                "time": datetime.fromtimestamp(end_ms / 1000, timezone.utc).strftime("%H:%M:%S"),
+                "time": datetime.fromtimestamp(end_ms / 1000, UTC).strftime("%H:%M:%S"),
                 "logs": log_counts.get(i, 0),
                 "alerts": alert_counts.get(i, 0),
             }

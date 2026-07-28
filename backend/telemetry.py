@@ -139,6 +139,7 @@ def _current_rss_bytes() -> int | None:
             import ctypes
 
             libc = ctypes.CDLL("/usr/lib/libSystem.dylib")
+
             # mach_task_self() + task_info(MACH_TASK_BASIC_INFO)
             class _TaskBasicInfo(ctypes.Structure):
                 _fields_ = [
@@ -154,9 +155,7 @@ def _current_rss_bytes() -> int | None:
             info = _TaskBasicInfo()
             count = ctypes.c_uint32(ctypes.sizeof(info) // ctypes.sizeof(ctypes.c_uint32))
             libc.mach_task_self.restype = ctypes.c_uint32
-            rc = libc.task_info(
-                libc.mach_task_self(), 20, ctypes.byref(info), ctypes.byref(count)
-            )
+            rc = libc.task_info(libc.mach_task_self(), 20, ctypes.byref(info), ctypes.byref(count))
             if rc == 0 and info.resident_size:
                 return int(info.resident_size)
         except Exception:

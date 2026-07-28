@@ -58,9 +58,7 @@ def _tamper(args) -> int:
     print(f"    before: {old!r}")
     print(f"    after:  {args.value!r}")
     with store.write() as w:
-        w.execute(
-            f"UPDATE events SET {args.field} = ? WHERE id = ?", (args.value, args.event_id)
-        )
+        w.execute(f"UPDATE events SET {args.field} = ? WHERE id = ?", (args.value, args.event_id))
     print("\nDone. Now run:  python -m cli ledger verify")
     return 0
 

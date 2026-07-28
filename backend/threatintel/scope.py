@@ -46,8 +46,7 @@ _SPECIAL_RANGES: list[tuple[ipaddress.IPv4Network, tuple[str, str]]] = [
 ]
 
 _SPECIAL_BOUNDS = [
-    (int(net.network_address), int(net.broadcast_address), label)
-    for net, label in _SPECIAL_RANGES
+    (int(net.network_address), int(net.broadcast_address), label) for net, label in _SPECIAL_RANGES
 ]
 
 

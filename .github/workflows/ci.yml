@@ -1,0 +1,82 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          # Pinned rather than matrixed. Running a portfolio Flask app against
+          # three interpreters burns CI minutes to tell us nothing we act on.
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest ruff
+
+      - name: Lint
+        working-directory: backend
+        run: ruff check .
+
+      - name: Format check
+        working-directory: backend
+        run: ruff format --check .
+
+      - name: Tests
+        working-directory: backend
+        run: python -m pytest -q
+
+      - name: No fabricated values may return
+        working-directory: backend
+        run: |
+          # The project's whole premise is that it does not invent numbers.
+          # randomness is legitimate in exactly one place — the synthetic log
+          # generator, which produces input data and labels it origin=synthetic.
+          # Anywhere else it would be faking a measurement of the system itself.
+          if grep -rn --include="*.py" "random\." . \
+               | grep -v "^./app.py" \
+               | grep -v "^./tests/" \
+               | grep -v "threatintel/pool.py"; then
+            echo "::error::random.* found outside the synthetic generator"
+            exit 1
+          fi
+          # Names the project has committed to not using.
+          if grep -rniE "hyperledger|LogLM|IRIS-SOC" --include="*.py" --include="*.jsx" \
+               --include="*.md" . ../frontend/src ../README.md; then
+            echo "::error::a retired overclaiming name has come back"
+            exit 1
+          fi
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - run: npm ci
+      - run: npm run lint
+      # Catches broken imports and env misuse that lint and tests miss.
+      - run: npm run build

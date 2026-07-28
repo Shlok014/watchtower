@@ -1,10 +1,11 @@
 """Cache location, provenance manifest, and atomic writes."""
 
+import contextlib
 import hashlib
 import json
 import os
 import tempfile
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 CACHE_DIR = Path(__file__).resolve().parent.parent / "data" / "feeds"
@@ -13,7 +14,7 @@ SCHEMA = 1
 
 
 def utcnow() -> str:
-    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    return datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
 def atomic_write_bytes(path: Path, data: bytes) -> None:
@@ -31,10 +32,8 @@ def atomic_write_bytes(path: Path, data: bytes) -> None:
             os.fsync(fh.fileno())
         os.replace(tmp, path)
     except BaseException:
-        try:
+        with contextlib.suppress(OSError):
             os.unlink(tmp)
-        except OSError:
-            pass
         raise
 
 

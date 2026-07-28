@@ -18,8 +18,8 @@ Design notes worth defending in review:
 import bisect
 import ipaddress
 import threading
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from dataclasses import dataclass
+from datetime import UTC, datetime
 
 from . import parse, store
 from .feeds import FEEDS
@@ -56,7 +56,7 @@ def _age_hours(iso: str | None) -> float | None:
         ts = datetime.fromisoformat(iso.replace("Z", "+00:00"))
     except ValueError:
         return None
-    return (datetime.now(timezone.utc) - ts).total_seconds() / 3600.0
+    return (datetime.now(UTC) - ts).total_seconds() / 3600.0
 
 
 class ReputationIndex:
@@ -108,9 +108,7 @@ class ReputationIndex:
             st.fetched_at = entry.get("fetched_at")
             st.age_hours = _age_hours(st.fetched_at)
             st.state = (
-                STALE
-                if st.age_hours is not None and st.age_hours > spec.max_age_hours
-                else FRESH
+                STALE if st.age_hours is not None and st.age_hours > spec.max_age_hours else FRESH
             )
             idx.states[spec.name] = st
         return idx
@@ -172,9 +170,7 @@ class ReputationIndex:
 
         hits = self._hits(int(addr))
         if not hits:
-            names = ", ".join(
-                s.citation for s in FEEDS if self.states[s.name].state != MISSING
-            )
+            names = ", ".join(s.citation for s in FEEDS if self.states[s.name].state != MISSING)
             return Verdict("unlisted", 0.0, (), f"Not listed in {names}", True)
 
         # Both feeds can match the same address (39 Tor exits also sit inside a
