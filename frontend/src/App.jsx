@@ -518,7 +518,17 @@ export default function App() {
     const res = await fetchJSON(`${API}/blockchain/validate`, { method: 'POST' })
     if (res) {
       setValidationResult(res)
-      showToast(res.valid ? `✅ Chain valid — ${res.blocks_checked} blocks verified` : '❌ Chain integrity compromised!', res.valid ? 'success' : 'danger')
+      // Reads links_ok, not valid. The backend field was renamed when the check
+      // was corrected to stop claiming integrity verification; this toast kept
+      // reading `res.valid`, which is undefined and therefore falsy — so it
+      // accused the ledger of being compromised on every single check, directly
+      // contradicting the panel underneath it.
+      showToast(
+        res.links_ok
+          ? `✅ Link continuity OK — ${res.blocks_checked} blocks (contents not re-hashed)`
+          : `❌ Chain broken — ${res.errors?.length || 0} link mismatch(es)`,
+        res.links_ok ? 'success' : 'danger'
+      )
     }
   }
 

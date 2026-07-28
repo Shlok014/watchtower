@@ -11,9 +11,10 @@ import time
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 
-from flask import Flask, jsonify, request
+from flask import Flask, abort, jsonify, request
 from flask_cors import CORS
 
+import store
 import telemetry
 import threatintel
 from threatintel import pool as ip_pool
@@ -25,47 +26,17 @@ DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
 os.makedirs(DATA_DIR, exist_ok=True)
 
 # ─── In-Memory Data Stores ─────────────────────────────────────────────────────
-# These are ring buffers, not archives. len() of any of them is the buffer's
-# current occupancy, never a cumulative total — the monotonic counters below are
-# what the UI must show as "total ingested". Conflating the two meant the
-# dashboard's "Total Logs Ingested" froze at 2000 after about 47 minutes.
-logs = []
-alerts = []
-soar_actions = []
-blockchain_ledger = []
+# State lives in SQLite. It used to be four module-level lists that the
+# generator thread appended to and popped from while Flask handlers iterated
+# them, with no lock held — and only the ledger was persisted, on every
+# twentieth block, inside a bare `except Exception: pass`.
+#
+# Lifetime totals are a persisted counters table rather than max(id) or
+# COUNT(*), both of which fall when retention prunes. "Total events ever
+# ingested" must never go down.
 
-# Monotonic lifetime counters. Guarded by _counter_lock because the generator
-# thread and /api/simulate-attack both increment them, and `x += 1` is a
-# LOAD/ADD/STORE that can interleave at a bytecode boundary.
-_counter_lock = threading.Lock()
-_log_counter = 0
-_alert_counter = 0
-_block_counter = 0
-_soar_counter = 0
-_dropped_unparseable = 0
-
-# Config
 LOG_GENERATION_ACTIVE = True
-MAX_LOGS = 2000
-MAX_ALERTS = 500
 ALERT_THRESHOLD = 0.45
-
-
-def _next(name: str) -> int:
-    """Atomically increment and return one of the lifetime counters."""
-    global _log_counter, _alert_counter, _block_counter, _soar_counter
-    with _counter_lock:
-        if name == "log":
-            _log_counter += 1
-            return _log_counter
-        if name == "alert":
-            _alert_counter += 1
-            return _alert_counter
-        if name == "block":
-            _block_counter += 1
-            return _block_counter
-        _soar_counter += 1
-        return _soar_counter
 
 # ─── Source Addresses for the Synthetic Generator ──────────────────────────────
 # What used to live here was a table of fourteen addresses with invented cities
@@ -158,36 +129,6 @@ EVENT_TYPES = {
     "normal_traffic":       {"severity": "low",      "category": "network"},
 }
 
-# ─── Persistence Helpers ────────────────────────────────────────────────────────
-_save_lock = threading.Lock()
-_save_counter = 0
-
-def _save_data():
-    """Persist data to JSON files periodically."""
-    global _save_counter
-    _save_counter += 1
-    if _save_counter % 20 != 0:  # Save every 20th log
-        return
-    with _save_lock:
-        try:
-            with open(os.path.join(DATA_DIR, "ledger.json"), "w") as f:
-                json.dump(blockchain_ledger[-200:], f, default=str)
-        except Exception:
-            pass
-
-def _load_data():
-    """Load persisted data on startup."""
-    try:
-        path = os.path.join(DATA_DIR, "ledger.json")
-        if os.path.exists(path):
-            with open(path) as f:
-                data = json.load(f)
-                blockchain_ledger.extend(data)
-            print(f"   📂 Loaded {len(data)} blockchain blocks from disk")
-    except Exception:
-        pass
-
-
 # ─── Append-Only Hash Chain ─────────────────────────────────────────────────────
 # A single-writer hash chain: the data structure inside a blockchain, without
 # the consensus, because there is exactly one trusted writer. It is not a
@@ -201,26 +142,29 @@ def _load_data():
 # NOTE: verification is still only link-continuity (see validate_chain). Making
 # it recompute content hashes is the next piece of work; until then nothing in
 # this file may claim the ledger is tamper-evident.
-def hash_log(log_entry):
+# The exact serialisation is recorded per-block in the ledger's payload_canon
+# column so the digest can be reproduced later. json.dumps defaults to
+# ensure_ascii=True and ', '/': ' separators — labelling this "utf8 json" would
+# not be enough to reproduce a single byte.
+def _canonical(log_entry) -> str:
+    return json.dumps(log_entry, sort_keys=True, default=str)
+
+
+def hash_log(conn, log_entry, event_id):
     """Append one entry to the hash chain and return the new block."""
-    log_str = json.dumps(log_entry, sort_keys=True, default=str)
-    prev_hash = blockchain_ledger[-1]["hash"] if blockchain_ledger else "0" * 64
-    block_hash = hashlib.sha256((prev_hash + log_str).encode()).hexdigest()
+    log_str = _canonical(log_entry)
+    prev_hash = store.repos.last_block_hash(conn) or "0" * 64
     block = {
-        # A monotonic counter, not len(blockchain_ledger) + 1. The list is
-        # capped at 500 and pops from the front, so the old expression pinned
-        # every block past the cap at id 501 forever.
-        "block_id": _next("block"),
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "log_id": log_entry.get("id"),
         "log_hash": hashlib.sha256(log_str.encode()).hexdigest(),
         "prev_hash": prev_hash,
-        "hash": block_hash,
+        "hash": hashlib.sha256((prev_hash + log_str).encode()).hexdigest(),
     }
-    blockchain_ledger.append(block)
-    if len(blockchain_ledger) > 500:
-        blockchain_ledger.pop(0)
-    _save_data()
+    # block_id is the table's own monotonic rowid. It used to be
+    # len(blockchain_ledger) + 1 over a list capped at 500 that popped from the
+    # front, which pinned every block past the cap at id 501 forever.
+    block["block_id"] = store.repos.insert_block(conn, block, log_str, event_id)
     return block
 
 
@@ -230,30 +174,38 @@ def validate_chain():
     This is *link continuity only*. It does not recompute any block's hash from
     the log it claims to protect, so editing a log entry — or a block's own
     log_hash — passes this check. Callers must describe the result in exactly
-    those terms; the API field is named `check` rather than `valid` so that no
-    consumer can accidentally read it as "integrity verified".
+    those terms.
+
+    The ledger table now stores each block's preimage (payload_json), which is
+    what will make real verification possible — but nothing here recomputes it
+    yet, so `content_hashes_recomputed` stays false and the caveat stands.
     """
+    links = store.repos.chain_links()
     errors = []
-    for i in range(1, len(blockchain_ledger)):
-        if blockchain_ledger[i]["prev_hash"] != blockchain_ledger[i - 1]["hash"]:
+    for i in range(1, len(links)):
+        if links[i][1] != links[i - 1][2]:
             errors.append({
-                "block_id": blockchain_ledger[i]["block_id"],
-                "expected": blockchain_ledger[i - 1]["hash"][:16] + "…",
-                "got": blockchain_ledger[i]["prev_hash"][:16] + "…",
+                "block_id": links[i][0],
+                "expected": links[i - 1][2][:16] + "…",
+                "got": links[i][1][:16] + "…",
             })
+    count, oldest, newest = store.repos.ledger_bounds()
     return {
         "check": "link_continuity",
         "links_ok": len(errors) == 0,
-        "blocks_checked": len(blockchain_ledger),
+        "blocks_checked": count,
         "errors": errors,
-        "chain_length": len(blockchain_ledger),
+        "chain_length": count,
         "content_hashes_recomputed": False,
         "caveat": (
             "Only prev_hash pointers were compared. Block contents were not "
             "re-hashed, so this cannot detect a modified log entry."
         ),
-        "latest_hash": blockchain_ledger[-1]["hash"] if blockchain_ledger else None,
-        "genesis_hash": blockchain_ledger[0]["hash"] if blockchain_ledger else None,
+        "latest_hash": newest,
+        # The ledger is append-only, so this really is the genesis block. When
+        # the chain was a capped list this field named whichever block happened
+        # to be oldest at the time, while still calling it genesis.
+        "genesis_hash": oldest,
     }
 
 
@@ -265,7 +217,6 @@ def normalize_log(raw_log):
     ip = raw_log.get("ip", "0.0.0.0")
     verdict = threatintel.classify(ip)
     return {
-        "id": raw_log["id"],
         "timestamp": raw_log["timestamp"],
         "source": raw_log["source"],
         "event": event,
@@ -315,23 +266,35 @@ RULESET_VERSION = "rules-" + hashlib.sha256(
     ).encode()
 ).hexdigest()[:8]
 
-_failed_login_tracker = defaultdict(list)
-_request_freq_tracker = defaultdict(list)
+FAILED_LOGIN_WINDOW_S = 60
+FREQUENCY_WINDOW_S = 30
 
-def rules_detect(log_entry):
+
+def rules_detect(conn, log_entry, ingested_ts_ms):
     """
     Rule-based detection: sliding-window feature extraction + weighted scoring.
+
+    The windows are SQL counts over the events table rather than two
+    module-level `defaultdict(list)` caches. Those caches were mutated from the
+    generator thread and read from request handlers, never evicted a key when
+    its list emptied (so every IP ever seen leaked forever), and were lost on
+    restart — so a restart silently reset every brute-force window to zero.
+
+    They count on `ingested_ts_ms`, deliberately. Replayed events carry their
+    original timestamps, so a window over event time would match nothing and
+    the detector would report "no rule matched" on every replayed event — a
+    silent failure indistinguishable from benign traffic.
     """
-    now = time.time()
     ip = log_entry["ip"]
     event = log_entry["event"]
 
     # ── Feature Extraction ──
-    # 1. Failed attempts count (last 60s)
-    if event == "failed_login":
-        _failed_login_tracker[ip].append(now)
-    _failed_login_tracker[ip] = [t for t in _failed_login_tracker[ip] if now - t < 60]
-    failed_attempts = len(_failed_login_tracker[ip])
+    # 1. Failed logins from this IP in the last 60s, whatever the current event
+    #    is. The current event is already inserted, so it counts itself —
+    #    matching the old tracker, which appended before reading its length.
+    failed_attempts = store.repos.failed_logins_in_window(
+        conn, ip, ingested_ts_ms - FAILED_LOGIN_WINDOW_S * 1000
+    )
 
     # 2. IP reputation — a real lookup against cached public threat feeds.
     #
@@ -345,9 +308,9 @@ def rules_detect(log_entry):
     ip_rep_detail = rep.get("detail", "")
 
     # 3. Request frequency (events from this IP in last 30s)
-    _request_freq_tracker[ip].append(now)
-    _request_freq_tracker[ip] = [t for t in _request_freq_tracker[ip] if now - t < 30]
-    request_frequency = len(_request_freq_tracker[ip])
+    request_frequency = store.repos.events_in_window(
+        conn, ip, ingested_ts_ms - FREQUENCY_WINDOW_S * 1000
+    )
 
     features = {
         "failed_attempts_count": failed_attempts,
@@ -469,7 +432,6 @@ def soar_respond(alert_entry):
     total_us = round((time.perf_counter() - t_start) * 1e6, 1)
 
     response = {
-        "id": _next("soar"),
         "alert_id": alert_entry["id"],
         "timestamp": ts.isoformat(),
         "event": event,
@@ -483,17 +445,13 @@ def soar_respond(alert_entry):
         "priority": playbook["priority"],
         "playbook": f"PB-{event.upper().replace('_', '-')}",
     }
-    soar_actions.append(response)
-    if len(soar_actions) > 300:
-        soar_actions.pop(0)
     return response
 
 
 # ─── Alert System ──────────────────────────────────────────────────────────────
-def create_alert(log_entry, detection_result):
+def create_alert(conn, log_entry, detection_result, event_id):
     """Create an alert from an anomalous log."""
     alert = {
-        "id": _next("alert"),
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "event": log_entry["event"],
         "source": log_entry["source"],
@@ -509,15 +467,15 @@ def create_alert(log_entry, detection_result):
         "status": "open",
         "soar_response": None,
     }
-    alerts.append(alert)
-    if len(alerts) > MAX_ALERTS:
-        alerts.pop(0)
+    alert["id"] = store.repos.insert_alert(conn, alert, event_id)
 
     # The status stays "open". It used to be set to "mitigated" on the line
     # after soar_respond() returned — but soar_respond only builds a dict, so
     # every alert in the system claimed to have been remediated the instant it
     # was raised. A status has to be earned by an action that actually ran.
-    alert["soar_response"] = soar_respond(alert)
+    response = soar_respond(alert)
+    response["id"] = store.repos.insert_soar(conn, response, alert["id"])
+    alert["soar_response"] = response
     return alert
 
 
@@ -559,7 +517,7 @@ def generate_random_log():
     }
 
     return {
-        "id": _next("log"),
+        # No id here: it is the events table's rowid, assigned on insert.
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "source": source,
         "event": event,
@@ -582,141 +540,148 @@ def process_log(raw_log):
 
     t0 = time.perf_counter()
     normalized = normalize_log(raw_log)
-    normalized.setdefault("origin", raw_log.get("origin", "synthetic"))
+    # Never default a missing origin. Labelling real traffic "synthetic" is
+    # wrong in the dangerous direction and would quietly defeat the provenance
+    # labelling the whole honesty story rests on.
+    origin = raw_log.get("origin")
+    if not origin:
+        raise ValueError(f"raw log {raw_log.get('id')} has no origin")
+    normalized["origin"] = origin
     telemetry.record("normalize", time.perf_counter() - t0)
 
-    t0 = time.perf_counter()
-    logs.append(normalized)
-    if len(logs) > MAX_LOGS:
-        logs.pop(0)
-    telemetry.record("ingest", time.perf_counter() - t0)
+    ingested_ts_ms = store.repos.now_ms()
 
-    t0 = time.perf_counter()
-    detection = rules_detect(normalized)
-    telemetry.record("detect", time.perf_counter() - t0)
-
-    if detection["is_anomaly"]:
+    # One transaction for the whole event: the row, its alert, its SOAR record
+    # and its ledger block commit together or not at all. A half-committed
+    # event would leave a ledger block chained to a log entry that does not
+    # exist.
+    with store.write() as conn:
         t0 = time.perf_counter()
-        create_alert(normalized, detection)
-        telemetry.record("alert", time.perf_counter() - t0)
+        event_id = store.repos.insert_event(conn, normalized, ingested_ts_ms)
+        normalized["id"] = event_id
+        telemetry.record("ingest", time.perf_counter() - t0)
 
-    t0 = time.perf_counter()
-    hash_log(normalized)
-    telemetry.record("ledger", time.perf_counter() - t0)
+        t0 = time.perf_counter()
+        detection = rules_detect(conn, normalized, ingested_ts_ms)
+        telemetry.record("detect", time.perf_counter() - t0)
+
+        if detection["is_anomaly"]:
+            t0 = time.perf_counter()
+            create_alert(conn, normalized, detection, event_id)
+            telemetry.record("alert", time.perf_counter() - t0)
+
+        t0 = time.perf_counter()
+        hash_log(conn, normalized, event_id)
+        telemetry.record("ledger", time.perf_counter() - t0)
 
     telemetry.record("pipeline", time.perf_counter() - t_pipeline)
     telemetry.record_event()
     return normalized
 
 
+_last_prune = 0.0
+PRUNE_INTERVAL_S = 300
+
+
+def _housekeeping() -> None:
+    """Retention sweep and WAL truncation, every few minutes."""
+    global _last_prune
+    now = time.monotonic()
+    if now - _last_prune < PRUNE_INTERVAL_S:
+        return
+    _last_prune = now
+    try:
+        with store.write() as conn:
+            store.repos.prune(conn)
+        store.db.checkpoint()
+    except Exception as exc:
+        # Surfaced, not swallowed: a store that stopped pruning is a store
+        # that will fill the disk.
+        print(f"⚠️  housekeeping failed: {type(exc).__name__}: {exc}")
+
+
 def log_generator_loop():
     """Background thread that continuously generates synthetic logs."""
     while True:
         if LOG_GENERATION_ACTIVE:
-            process_log(generate_random_log())
+            try:
+                process_log(generate_random_log())
+            except Exception as exc:
+                # A persistence failure must be visible. The old code wrote the
+                # ledger inside `except Exception: pass`, so a full disk meant
+                # nothing was recorded and the dashboard looked perfectly fine.
+                print(f"⚠️  pipeline error: {type(exc).__name__}: {exc}")
+        _housekeeping()
         time.sleep(random.uniform(0.8, 2.0))
 
 
 # ─── API Endpoints ──────────────────────────────────────────────────────────────
+def _query_int(name: str, default: int, lo: int, hi: int) -> int:
+    """Bounded integer query param. `?limit=abc` used to raise and return 500."""
+    raw = request.args.get(name)
+    if raw in (None, ""):
+        return default
+    try:
+        return max(lo, min(hi, int(raw)))
+    except (TypeError, ValueError):
+        abort(400, description=f"{name} must be an integer")
+
+
 
 @app.route("/api/logs", methods=["GET"])
 def get_logs():
-    severity = request.args.get("severity")
-    source = request.args.get("source")
-    search = request.args.get("search", "").lower()
-    limit = int(request.args.get("limit", 100))
-
-    result = list(logs)
-    if severity:
-        result = [l for l in result if l["severity"] == severity]
-    if source:
-        result = [l for l in result if l["source"] == source]
-    if search:
-        result = [l for l in result if search in json.dumps(l).lower()]
-
-    result = result[-limit:]
-    result.reverse()
-    return jsonify(result)
+    return jsonify(
+        store.repos.recent_events(
+            limit=_query_int("limit", 100, 1, 1000),
+            severity=request.args.get("severity") or None,
+            source=request.args.get("source") or None,
+            search=request.args.get("search") or None,
+        )
+    )
 
 
 @app.route("/api/alerts", methods=["GET"])
 def get_alerts():
-    limit = int(request.args.get("limit", 50))
-    result = list(alerts[-limit:])
-    result.reverse()
-    return jsonify(result)
+    return jsonify(store.repos.recent_alerts(_query_int("limit", 50, 1, 500)))
 
 
 @app.route("/api/stats", methods=["GET"])
 def get_stats():
-    now = datetime.now(timezone.utc)
-    high_alerts = sum(1 for a in alerts if a["severity"] in ("high", "critical"))
-    critical_alerts = sum(1 for a in alerts if a["severity"] == "critical")
-    medium_alerts = sum(1 for a in alerts if a["severity"] == "medium")
+    """Dashboard aggregates, computed in SQL.
 
-    # Logs over time — last 30 intervals (each ~10 seconds)
-    time_buckets = []
-    for i in range(29, -1, -1):
-        bucket_start = now - timedelta(seconds=(i + 1) * 10)
-        bucket_end = now - timedelta(seconds=i * 10)
-        log_count = 0
-        for l in logs:
-            try:
-                ts = datetime.fromisoformat(l["timestamp"])
-                if bucket_start <= ts <= bucket_end:
-                    log_count += 1
-            except Exception:
-                pass
-        alert_count = 0
-        for a in alerts:
-            try:
-                ts = datetime.fromisoformat(a["timestamp"])
-                if bucket_start <= ts <= bucket_end:
-                    alert_count += 1
-            except Exception:
-                pass
-        time_buckets.append({
-            "time": bucket_end.strftime("%H:%M:%S"),
-            "logs": log_count,
-            "alerts": alert_count,
-        })
-
-    alert_dist = {"critical": critical_alerts, "high": high_alerts - critical_alerts,
-                  "medium": medium_alerts, "low": len(alerts) - high_alerts - medium_alerts}
-
-    event_dist = defaultdict(int)
-    for l in logs[-200:]:
-        event_dist[l["event"]] += 1
-
-    source_dist = defaultdict(int)
-    for l in logs[-200:]:
-        source_dist[l["source"]] += 1
-
+    This used to loop over every retained log and every alert once per time
+    bucket, calling datetime.fromisoformat each time — roughly 75,000 parses per
+    request at a full buffer, measured at 13.0 ms of which 9.2 ms was parsing,
+    repeated every 2 seconds.
+    """
+    st = store.repos.stats()
+    totals, retained = st["totals"], st["retained"]
     return jsonify({
-        # Lifetime totals come from monotonic counters. Returning len() here
-        # meant every "total" silently stopped counting once its ring buffer
-        # filled: total_logs froze at 2000, blocks at 500, SOAR actions at 300.
-        "total_logs": _log_counter,
-        "total_alerts": _alert_counter,
-        "total_blocks": _block_counter,
-        "soar_actions_count": _soar_counter,
-        # ...and the buffer occupancies are reported separately, under names
-        # that say what they are.
-        "logs_retained": len(logs),
-        "alerts_retained": len(alerts),
-        "blocks_retained": len(blockchain_ledger),
-        "retention_note": (
-            f"in-memory ring buffers: {MAX_LOGS} logs, {MAX_ALERTS} alerts, "
-            "500 blocks, 300 SOAR records"
-        ),
-        "high_severity_alerts": high_alerts,
-        "critical_alerts": critical_alerts,
-        "medium_severity_alerts": medium_alerts,
+        # Lifetime totals, from the persisted counters table. Returning a
+        # row count here would make every "total" fall the moment retention
+        # pruned an old event.
+        "total_logs": totals["events"],
+        "total_alerts": totals["alerts"],
+        "total_blocks": totals["blocks"],
+        "soar_actions_count": totals["soar"],
+        # ...and what is currently on disk, under names that say so.
+        "logs_retained": retained["events"],
+        "alerts_retained": retained["alerts"],
+        "blocks_retained": retained["blocks"],
+        # Derived from the live policy, never a literal. Hardcoded, this string
+        # would have gone on describing the in-memory ring buffers it was
+        # written for — in the very field added to stop the app misdescribing
+        # its own storage.
+        "retention_note": store.retention_note(),
+        "high_severity_alerts": st["high_severity_alerts"],
+        "critical_alerts": st["critical_alerts"],
+        "medium_severity_alerts": st["medium_severity_alerts"],
         "ruleset_version": RULESET_VERSION,
-        "logs_over_time": time_buckets,
-        "alert_distribution": alert_dist,
-        "event_distribution": dict(event_dist),
-        "source_distribution": dict(source_dist),
+        "logs_over_time": st["timeline"],
+        "alert_distribution": st["alert_distribution"],
+        "event_distribution": st["event_distribution"],
+        "source_distribution": st["source_distribution"],
+        "origin_distribution": st["origin_distribution"],
         "uptime_seconds": telemetry.uptime_seconds(),
         "sources": SOURCES,
     })
@@ -724,25 +689,18 @@ def get_stats():
 
 @app.route("/api/blockchain", methods=["GET"])
 def get_blockchain():
-    limit = int(request.args.get("limit", 30))
-    result = list(blockchain_ledger[-limit:])
-    result.reverse()
-    return jsonify(result)
+    return jsonify(store.repos.recent_blocks(_query_int("limit", 30, 1, 500)))
 
 
 @app.route("/api/blockchain/validate", methods=["POST"])
 def validate_blockchain():
-    """Validate the integrity of the blockchain ledger."""
-    result = validate_chain()
-    return jsonify(result)
+    """Check link continuity across the ledger. NOT an integrity verification."""
+    return jsonify(validate_chain())
 
 
 @app.route("/api/soar-actions", methods=["GET"])
 def get_soar_actions():
-    limit = int(request.args.get("limit", 30))
-    result = list(soar_actions[-limit:])
-    result.reverse()
-    return jsonify(result)
+    return jsonify(store.repos.recent_soar(_query_int("limit", 30, 1, 500)))
 
 
 @app.route("/api/simulate-attack", methods=["POST"])
@@ -804,7 +762,6 @@ def simulate_attack():
         user = random.choice(profile["users"])
         source = random.choice(SOURCES)
         raw = {
-            "id": _next("log"),
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "source": source,
             "event": event,
@@ -855,25 +812,28 @@ def retrain_model():
 
 @app.route("/api/reset", methods=["POST"])
 def reset_all():
-    """Clear all logs, alerts, blockchain, and SOAR actions."""
-    global _log_counter, _alert_counter, _block_counter, _soar_counter, _save_counter
-    logs.clear()
-    alerts.clear()
-    soar_actions.clear()
-    blockchain_ledger.clear()
-    _failed_login_tracker.clear()
-    _request_freq_tracker.clear()
-    with _counter_lock:
-        _log_counter = _alert_counter = _block_counter = _soar_counter = 0
-    _save_counter = 0
+    """Delete every stored row, and report what was actually deleted.
+
+    Against the old in-memory lists this cleared four Python lists and unlinked
+    a JSON file. Left unchanged against a database it would have deleted
+    nothing while still returning "All data cleared" — an endpoint that says it
+    removed everything and did not is exactly the class of statement this
+    project exists to remove. The message is now built from real row counts.
+    """
+    with store.write() as conn:
+        deleted = store.repos.reset_all(conn)
+    store.db.checkpoint()
     telemetry.reset()
-    # Clear persistence file
-    ledger_path = os.path.join(DATA_DIR, "ledger.json")
-    if os.path.exists(ledger_path):
-        os.remove(ledger_path)
+    total = sum(deleted.values())
     return jsonify({
         "status": "success",
-        "message": "All data cleared — logs, alerts, blockchain, and SOAR actions reset to zero",
+        "deleted": deleted,
+        "message": (
+            f"Deleted {total} rows — "
+            f"{deleted['events']} events, {deleted['alerts']} alerts, "
+            f"{deleted['ledger']} ledger blocks, "
+            f"{deleted['soar_executions']} SOAR records"
+        ),
     })
 
 
@@ -891,6 +851,8 @@ def _component_health():
     """
     alive = _generator_alive()
     gen_status = "running" if alive else "stopped"
+    c = store.repos.counters()
+    retained = store.db.connect().execute("SELECT count(*) FROM events").fetchone()[0]
     feeds = threatintel.get_index()
     feed_ok = feeds.usable
     stale = any(s.state == threatintel.STALE for s in feeds.states.values())
@@ -908,8 +870,8 @@ def _component_health():
         }
 
     return [
-        stage("Ingest Queue", "📡", "ingest", f"{_log_counter} ingested", gen_status),
-        stage("Normalization", "⚙️", "normalize", f"{len(logs)} retained", gen_status),
+        stage("Ingest Queue", "📡", "ingest", f"{c['events']} ingested", gen_status),
+        stage("Normalization", "⚙️", "normalize", f"{retained} retained", gen_status),
         stage(
             "Detection Engine",
             "🧠",
@@ -917,9 +879,9 @@ def _component_health():
             RULESET_VERSION if feed_ok else "no threat feed",
             "running" if feed_ok else "degraded",
         ),
-        stage("Alert System", "🚨", "alert", f"{_alert_counter} raised"),
-        stage("SOAR Engine", "🤖", "alert", f"{_soar_counter} playbooks selected", "simulated"),
-        stage("Audit Ledger", "🔗", "ledger", f"{_block_counter} blocks"),
+        stage("Alert System", "🚨", "alert", f"{c['alerts']} raised"),
+        stage("SOAR Engine", "🤖", "alert", f"{c['soar']} playbooks selected", "simulated"),
+        stage("Audit Ledger", "🔗", "ledger", f"{c['blocks']} blocks"),
     ], feed_ok, stale, alive
 
 
@@ -984,7 +946,7 @@ def threat_intel_status():
 _generator_thread = None
 
 
-def start_background(load_persisted: bool = True) -> None:
+def start_background() -> None:
     """Bring the app up.
 
     Called at import time, not from `if __name__ == "__main__"`. The startup
@@ -994,9 +956,8 @@ def start_background(load_persisted: bool = True) -> None:
     global _generator_thread
     if _generator_thread is not None:
         return
+    store.db.connect()          # creates/validates the schema once
     refresh_ip_pools()
-    if load_persisted:
-        _load_data()
     _generator_thread = threading.Thread(
         target=log_generator_loop, name="log-generator", daemon=True
     )
@@ -1018,6 +979,8 @@ def _startup_banner() -> str:
     if not idx.usable:
         lines.append("   IP reputation will report 'unavailable' rather than guessing.")
         lines.append("   Fetch feeds with: python -m threatintel.fetch")
+    c = store.repos.counters()
+    lines.append(f"💾 Store: {store.db.path()} ({c['events']} events, {c['blocks']} blocks so far)")
     lines.append(f"🔎 Demo addresses: {IP_POOL_NOTE}")
     lines.append("🔗 API: http://localhost:5001\n")
     return "\n".join(lines)

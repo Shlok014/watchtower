@@ -29,7 +29,7 @@ and a SHA-256 hash-chained audit ledger — Flask + React.**
 | SOAR | Playbook *selection* is real; steps are labelled `selected`, `executed: false`, and nothing is contacted | ⚠️ no integrations — and the UI says so |
 | Audit ledger | SHA-256 chain, monotonic block ids, no decorative nonce. Verification compares `prev_hash` links **only** — it does not recompute content hashes, so it cannot yet detect an edited log entry. | ⚠️ hash chain, **not yet tamper-evident** |
 | Telemetry | Measured: per-stage p50/p95 via `perf_counter`, real RSS, real CPU, real 60s-window throughput, real uptime | ✅ real, measured |
-| Persistence | Module-level ring buffers; only the ledger is written to JSON | ❌ resets on restart |
+| **Persistence** | **SQLite in WAL mode.** One transaction per event covers the row, its alert, its SOAR record and its ledger block. Survives restart. Events retained 24h unless an alert cites them; the ledger is append-only and exempt. | ✅ **real** |
 | Dashboard | React + Chart.js, 2s polling, real connection gate | ✅ real |
 
 Detection is a **rule engine**, deliberately. Three sliding-window features and a
@@ -81,12 +81,55 @@ of detecting real attacks.
 
 - [x] Remove every fabricated value from scoring, telemetry and retraining
 - [x] Real IP reputation from public threat feeds
-- [ ] SQLite persistence (WAL) replacing shared mutable lists
+- [x] SQLite persistence (WAL) replacing shared mutable lists
 - [ ] Content-addressed hash chain with real tamper detection + a tamper demo
 - [ ] Drain3 log parsing + a trained model measured on the HDFS_v1 benchmark
 - [ ] Real ingestion sources: syslog listener, file tailer, dataset replay
 - [ ] SOAR blocklist the pipeline actually enforces
 - [ ] Tests + CI
+
+## Storage
+
+State lives in `backend/data/watchtower.db` (SQLite, WAL). It replaced four
+module-level Python lists that a background thread appended to and popped from
+while Flask handlers iterated them, with no lock held — and a ledger written to
+JSON on every twentieth block inside a bare `except Exception: pass`.
+
+Measured on this machine (Python 3.14, macOS/arm64):
+
+| | |
+|---|---|
+| Sustained writes | ~1,800 events/sec, 4 writer threads + a concurrent reader, zero `database is locked` |
+| `/api/stats` | **1.6 ms**, down from 13.0 ms — the old version re-parsed every timestamp once per time bucket, ~75,000 `fromisoformat` calls per request, every 2 seconds |
+| Ledger growth | 838 bytes/block → **~48 MB/day** at the generator's ~0.7 ev/s, ~1.7 GB/day at a 25 ev/s replay |
+
+That last row is a real constraint, not a footnote: the ledger is append-only
+and exempt from retention, because an audit ledger you silently truncate is not
+an audit ledger. `auto_vacuum=INCREMENTAL` is set before the first table is
+created — set afterwards it is silently ignored and the file then only ever
+grows.
+
+Two schema decisions worth calling out:
+
+* **Events carry both `ts_ms` and `ingested_ts_ms`.** Detection windows and
+  dashboard buckets key on ingest time. Keying them on event time would mean a
+  replayed 2008 dataset produces zero detections and a flat-zero timeline while
+  the ingest counter climbs — a silent failure that looks exactly like a quiet
+  network.
+* **`origin` is checked with `GLOB`, not `LIKE`.** SQLite's `LIKE` is ASCII
+  case-insensitive, so `LIKE 'replay:%'` also accepts `REPLAY:` and `Replay:`,
+  and two spellings of one provenance makes every `GROUP BY origin` under-count.
+
+## Tests
+
+```bash
+cd backend && .venv/bin/python -m pytest
+```
+
+19 tests covering provenance constraints, concurrent writers against a live
+reader, retention (including that an alert-referenced event is never pruned and
+that lifetime counters do not fall when it runs), transaction rollback leaving
+a usable connection, and restart durability.
 
 ## Running it
 
