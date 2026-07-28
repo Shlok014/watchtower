@@ -482,3 +482,5 @@ td.mono { font-family: var(--font-mono); }
 }
 .loading-stage.stopped { color: var(--red); }
 .loading-stage code { font-family: var(--font-mono); color: var(--cyan); }
+.chain-findings { margin: 0.4rem 0 0 1rem; padding: 0; font-size: 0.7rem; line-height: 1.5; }
+.chain-findings code { color: var(--red); font-family: var(--font-mono); }

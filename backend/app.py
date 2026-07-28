@@ -14,6 +14,7 @@ from datetime import datetime, timedelta, timezone
 from flask import Flask, abort, jsonify, request
 from flask_cors import CORS
 
+import ledger
 import store
 import telemetry
 import threatintel
@@ -129,84 +130,29 @@ EVENT_TYPES = {
     "normal_traffic":       {"severity": "low",      "category": "network"},
 }
 
-# ─── Append-Only Hash Chain ─────────────────────────────────────────────────────
-# A single-writer hash chain: the data structure inside a blockchain, without
-# the consensus, because there is exactly one trusted writer. It is not a
-# blockchain and it is emphatically not Hyperledger.
-#
-# The `nonce` that used to sit in each block is gone. It implied proof-of-work
-# that never happened, and it was not even an input to the digest — block_hash
-# is computed from prev_hash + payload only, so the nonce was decoration that
-# no verification step could ever have checked.
-#
-# NOTE: verification is still only link-continuity (see validate_chain). Making
-# it recompute content hashes is the next piece of work; until then nothing in
-# this file may claim the ledger is tamper-evident.
-# The exact serialisation is recorded per-block in the ledger's payload_canon
-# column so the digest can be reproduced later. json.dumps defaults to
-# ensure_ascii=True and ', '/': ' separators — labelling this "utf8 json" would
-# not be enough to reproduce a single byte.
-def _canonical(log_entry) -> str:
-    return json.dumps(log_entry, sort_keys=True, default=str)
-
-
-def hash_log(conn, log_entry, event_id):
-    """Append one entry to the hash chain and return the new block."""
-    log_str = _canonical(log_entry)
-    prev_hash = store.repos.last_block_hash(conn) or "0" * 64
-    block = {
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "log_id": log_entry.get("id"),
-        "log_hash": hashlib.sha256(log_str.encode()).hexdigest(),
-        "prev_hash": prev_hash,
-        "hash": hashlib.sha256((prev_hash + log_str).encode()).hexdigest(),
-    }
-    # block_id is the table's own monotonic rowid. It used to be
-    # len(blockchain_ledger) + 1 over a list capped at 500 that popped from the
-    # front, which pinned every block past the cap at id 501 forever.
-    block["block_id"] = store.repos.insert_block(conn, block, log_str, event_id)
+# ─── Tamper-Evident Audit Ledger ───────────────────────────────────────────────
+# Implementation lives in ledger.py. See that module for why the digest covers
+# the block header, why there is no proof-of-work nonce, and what each failure
+# reason means.
+def hash_log(conn, log_entry, event_id, event_ts_ms, ts_ms):
+    block = ledger.append(conn, log_entry, event_id, event_ts_ms, ts_ms)
+    store.repos.bump(conn, "blocks")
     return block
 
 
 def validate_chain():
-    """Check that each block's prev_hash matches its predecessor's hash.
-
-    This is *link continuity only*. It does not recompute any block's hash from
-    the log it claims to protect, so editing a log entry — or a block's own
-    log_hash — passes this check. Callers must describe the result in exactly
-    those terms.
-
-    The ledger table now stores each block's preimage (payload_json), which is
-    what will make real verification possible — but nothing here recomputes it
-    yet, so `content_hashes_recomputed` stays false and the caveat stands.
-    """
-    links = store.repos.chain_links()
-    errors = []
-    for i in range(1, len(links)):
-        if links[i][1] != links[i - 1][2]:
-            errors.append({
-                "block_id": links[i][0],
-                "expected": links[i - 1][2][:16] + "…",
-                "got": links[i][1][:16] + "…",
-            })
+    """Full verification: every digest recomputed from the live event rows."""
+    result = ledger.verify(store.db.connect()).as_dict()
     count, oldest, newest = store.repos.ledger_bounds()
-    return {
-        "check": "link_continuity",
-        "links_ok": len(errors) == 0,
-        "blocks_checked": count,
-        "errors": errors,
+    result.update({
         "chain_length": count,
-        "content_hashes_recomputed": False,
-        "caveat": (
-            "Only prev_hash pointers were compared. Block contents were not "
-            "re-hashed, so this cannot detect a modified log entry."
-        ),
         "latest_hash": newest,
-        # The ledger is append-only, so this really is the genesis block. When
-        # the chain was a capped list this field named whichever block happened
-        # to be oldest at the time, while still calling it genesis.
         "genesis_hash": oldest,
-    }
+        # Kept so the existing dashboard panel keeps rendering; it now means
+        # "the whole chain verified", not "two stored strings matched".
+        "links_ok": result["ok"],
+    })
+    return result
 
 
 # ─── Log Processing / Normalization ─────────────────────────────────────────────
@@ -559,6 +505,7 @@ def process_log(raw_log):
         t0 = time.perf_counter()
         event_id = store.repos.insert_event(conn, normalized, ingested_ts_ms)
         normalized["id"] = event_id
+        event_ts_ms = store.repos.from_iso(normalized["timestamp"])
         telemetry.record("ingest", time.perf_counter() - t0)
 
         t0 = time.perf_counter()
@@ -571,7 +518,7 @@ def process_log(raw_log):
             telemetry.record("alert", time.perf_counter() - t0)
 
         t0 = time.perf_counter()
-        hash_log(conn, normalized, event_id)
+        hash_log(conn, normalized, event_id, event_ts_ms, ingested_ts_ms)
         telemetry.record("ledger", time.perf_counter() - t0)
 
     telemetry.record("pipeline", time.perf_counter() - t_pipeline)
