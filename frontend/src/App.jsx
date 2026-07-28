@@ -379,17 +379,31 @@ function BlockchainPanel({ blocks, onValidate, validationResult }) {
   return (
     <div className="panel">
       <div className="panel-header">
-        <span className="panel-title"><span className="panel-title-icon">🔗</span> Audit Ledger <span className="model-tag">SHA-256 hash chain</span></span>
+        <span className="panel-title"><span className="panel-title-icon">🔗</span> Audit Ledger <span className="model-tag">tamper-evident SHA-256 chain</span></span>
         <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-          <button className="btn btn-validate" onClick={onValidate}>🔍 Check Links</button>
+          <button className="btn btn-validate" onClick={onValidate}>🔍 Verify Chain</button>
           <span className="panel-badge cyan">{blocks.length} blocks</span>
         </div>
       </div>
       {validationResult && (
-        <div className={`chain-validation ${validationResult.links_ok ? 'valid' : 'invalid'}`}>
-          {validationResult.links_ok
-            ? `✅ Link continuity OK — ${validationResult.blocks_checked} blocks' prev_hash pointers match. Content hashes were not recomputed, so this does not detect a modified log entry.`
-            : `❌ Chain broken — ${validationResult.errors?.length} link mismatch(es)`}
+        <div className={`chain-validation ${validationResult.ok ? 'valid' : 'invalid'}`}>
+          {validationResult.ok ? (
+            <>✅ Verified — {validationResult.blocks_checked} blocks, every digest recomputed
+              from the live event rows
+              {validationResult.pruned_events > 0 &&
+                ` (${validationResult.pruned_events} reference events removed by retention, checked against the stored preimage)`}
+            </>
+          ) : (
+            <>
+              ❌ Tamper detected — {validationResult.findings?.length} finding(s), first at
+              height {validationResult.first_bad_height}
+              <ul className="chain-findings">
+                {validationResult.findings?.slice(0, 5).map((f, i) => (
+                  <li key={i}><code>{f.reason}</code> at block {f.block_id} — {f.detail}</li>
+                ))}
+              </ul>
+            </>
+          )}
         </div>
       )}
       <div className="panel-body">
@@ -524,10 +538,10 @@ export default function App() {
       // accused the ledger of being compromised on every single check, directly
       // contradicting the panel underneath it.
       showToast(
-        res.links_ok
-          ? `✅ Link continuity OK — ${res.blocks_checked} blocks (contents not re-hashed)`
-          : `❌ Chain broken — ${res.errors?.length || 0} link mismatch(es)`,
-        res.links_ok ? 'success' : 'danger'
+        res.ok
+          ? `✅ Chain verified — ${res.blocks_checked} blocks, all digests recomputed`
+          : `❌ Tamper detected at height ${res.first_bad_height} — ${res.findings?.[0]?.reason}`,
+        res.ok ? 'success' : 'danger'
       )
     }
   }

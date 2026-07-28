@@ -323,23 +323,6 @@ def last_block_hash(conn) -> str | None:
     return row["hash"] if row else None
 
 
-def insert_block(conn, block: dict, payload_json: str, event_id: int | None) -> int:
-    cur = conn.execute(
-        """INSERT INTO ledger (ts_ms, event_id, payload_json, log_hash, prev_hash, hash)
-           VALUES (?,?,?,?,?,?)""",
-        (
-            from_iso(block["timestamp"]),
-            event_id,
-            payload_json,
-            block["log_hash"],
-            block["prev_hash"],
-            block["hash"],
-        ),
-    )
-    bump(conn, "blocks")
-    return cur.lastrowid
-
-
 def recent_blocks(limit=30) -> list[dict]:
     return [
         _block_row_to_dict(r)

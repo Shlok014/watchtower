@@ -27,7 +27,7 @@ and a SHA-256 hash-chained audit ledger — Flask + React.**
 | Detection | Sliding-window features (failed logins/60s, event rate/30s) + reputation, weighted. Deterministic: identical input and window state give an identical score. Versioned by the hash of the weights themselves. | ✅ real rules — **not** ML, and not called ML |
 | Alerting | Threshold 0.45, every alert carries the rules that fired and their evidence | ✅ real |
 | SOAR | Playbook *selection* is real; steps are labelled `selected`, `executed: false`, and nothing is contacted | ⚠️ no integrations — and the UI says so |
-| Audit ledger | SHA-256 chain, monotonic block ids, no decorative nonce. Verification compares `prev_hash` links **only** — it does not recompute content hashes, so it cannot yet detect an edited log entry. | ⚠️ hash chain, **not yet tamper-evident** |
+| **Audit ledger** | **Tamper-evident.** Every digest is recomputed from the live event row on verify, and the header digest covers height, timestamp, prev_hash and payload — so editing an event, rewriting a block, back-dating one, or deleting one is all detected and distinguished. | ✅ **real** |
 | Telemetry | Measured: per-stage p50/p95 via `perf_counter`, real RSS, real CPU, real 60s-window throughput, real uptime | ✅ real, measured |
 | **Persistence** | **SQLite in WAL mode.** One transaction per event covers the row, its alert, its SOAR record and its ledger block. Survives restart. Events retained 24h unless an alert cites them; the ledger is append-only and exempt. | ✅ **real** |
 | Dashboard | React + Chart.js, 2s polling, real connection gate | ✅ real |
@@ -82,7 +82,7 @@ of detecting real attacks.
 - [x] Remove every fabricated value from scoring, telemetry and retraining
 - [x] Real IP reputation from public threat feeds
 - [x] SQLite persistence (WAL) replacing shared mutable lists
-- [ ] Content-addressed hash chain with real tamper detection + a tamper demo
+- [x] Content-addressed hash chain with real tamper detection + a tamper demo
 - [ ] Drain3 log parsing + a trained model measured on the HDFS_v1 benchmark
 - [ ] Real ingestion sources: syslog listener, file tailer, dataset replay
 - [ ] SOAR blocklist the pipeline actually enforces
@@ -120,16 +120,65 @@ Two schema decisions worth calling out:
   case-insensitive, so `LIKE 'replay:%'` also accepts `REPLAY:` and `Replay:`,
   and two spellings of one provenance makes every `GROUP BY origin` under-count.
 
+## The audit ledger
+
+A single-writer hash chain — the data structure inside a blockchain, without the
+consensus, because there is exactly one trusted writer. It is not distributed,
+there is no proof-of-work, and it is not Hyperledger.
+
+The previous version compared each block's `prev_hash` against its predecessor's
+`hash` and nothing else. Both live in the same row, so it verified that two
+stored strings matched — it never recomputed a digest from the data it claimed
+to protect. Editing a log entry passed. It reported `blocks_checked: N` while
+checking nothing about those blocks' contents.
+
+Try it:
+
+```bash
+cd backend
+.venv/bin/python -m cli ledger verify
+# ✅ Chain verified — 26 blocks, every digest recomputed from the live event rows
+
+.venv/bin/python -m cli ledger tamper --event-id 7 --field message --value "nothing happened here"
+#   event 7.message
+#     before: '[SYSLOG] admin accessed /etc/shadow from 192.168.1.30'
+#     after:  'nothing happened here'
+
+.venv/bin/python -m cli ledger verify
+# ❌ TAMPER DETECTED — 1 finding(s) across 26 blocks.
+#   height 7 (block 7): payload_mismatch
+#     event 7 was modified after it was recorded (stored 3e43b48f0e26…, recomputed 3218805befed…)
+```
+
+`tamper` issues a raw SQL UPDATE that bypasses the application, which is the
+only honest way to demonstrate the property — anything routed through the app
+would re-chain the block and detect nothing.
+
+Verification distinguishes five outcomes: `payload_mismatch` (the event was
+edited), `header_mismatch` (the ledger row was edited), `chain_break`,
+`height_gap` (a block was deleted), and `pruned` — an event removed by
+retention, which is reported rather than treated as tampering.
+
+One implementation note worth reading if you ever build one of these: the digest
+covers `ts_ms`, the stored integer, not the ISO-8601 string. Hashing the ISO
+form on write and reconstructing it from milliseconds on verify silently loses
+sub-millisecond precision, and every block in the chain then reports as
+tampered. That bug is completely invisible until verification actually
+recomputes something — which is the whole point.
+
 ## Tests
 
 ```bash
 cd backend && .venv/bin/python -m pytest
 ```
 
-19 tests covering provenance constraints, concurrent writers against a live
+31 tests covering provenance constraints, concurrent writers against a live
 reader, retention (including that an alert-referenced event is never pruned and
-that lifetime counters do not fall when it runs), transaction rollback leaving
-a usable connection, and restart durability.
+that lifetime counters do not fall when it runs), transaction rollback leaving a
+usable connection, restart durability, and every ledger tamper mode — event
+edits across four columns, forged block digests, deleted blocks, back-dating,
+and 600 appends yielding 600 contiguous ids (the original code produced id 501
+forever).
 
 ## Running it
 
