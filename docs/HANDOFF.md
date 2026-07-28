@@ -44,7 +44,7 @@ strings in the same row — and never recomputed a digest from the data it claim
 to protect. Now every digest is recomputed from the live event row, with five
 distinguished outcomes and a `cli ledger tamper` demo.
 
-### Sessions 5–6 — real detection (this branch)
+### Sessions 5–6 — real detection (on main)
 - `datasets/download.py` — loghub 2k samples and full HDFS_v1
 - `detection/parser.py` — Drain3 with HDFS block-id masking
 - `detection/features.py` — per-block template count vectors
@@ -67,6 +67,25 @@ table.
 
 ---
 
+### CI
+`.github/workflows/ci.yml` — two jobs, no matrix. Backend: ruff lint + format
+check, pytest, and a gate that **fails the build if `random.*` reappears outside
+the synthetic generator**, or if `Hyperledger` / `LogLM` / `IRIS-SOC` come back.
+Frontend: `npm ci`, lint, build. Ruff config added and applied (43 findings
+fixed, 27 files formatted); parsing accuracy, chain verification and all 31 tests
+confirmed unchanged afterwards.
+
+⚠️ **The first CI run failed for a billing reason, not a code one.** Both jobs
+were refused with *"The job was not started because recent account payments have
+failed or your spending limit needs to be increased."* Every step was verified
+locally instead — ruff clean, 31 tests green, `npm run lint` and `npm run build`
+clean. Two ways out: fix Actions billing under GitHub → Settings → Billing, or
+**make the repo public**, which gives unlimited free Actions minutes and is on
+the roadmap anyway. Do not put a CI badge in the README until a run is actually
+green — a red badge on the masthead is worse than no badge.
+
+---
+
 ## Pick up here
 
 1. **Wire the trained model into a replay mode.** `detection/parser.py` has
@@ -75,9 +94,22 @@ table.
    dashboard's detection stays a rule engine; replay is where the model belongs.
    Nothing currently persists a fitted model — add joblib serialisation when it
    is wired in, so `/api/retrain` can return genuine before/after metrics.
-2. **Sessions 7–11** from the plan: real ingestion sources (syslog listener,
-   file tailer, dataset replay), SOAR blocklist the pipeline actually enforces,
-   the frontend split, CI, then the README/screenshots.
+2. **Session 9, the frontend** — this is the gate on going public. `App.jsx` is
+   still ~640 lines holding ten components, `fetchJSON` still swallows every
+   error and skips `res.ok`, and there is no offline banner or stale-data
+   handling. The connection gate and the truthful health/pipeline states landed
+   in Session 1; the split and the error UI did not.
+3. **Sessions 7–8** — real ingestion sources (syslog listener, file tailer,
+   dataset replay) and a SOAR blocklist the pipeline actually enforces.
+4. **Session 11** — screenshots, the demo GIF, and the README masthead. Do this
+   last, so the images show the final UI.
+
+## Repo state
+
+Branch `main`, everything pushed. PR #1 (sessions 1–2) and PR #2 (session 3) are
+merged. The detection benchmark and CI went **directly onto main** rather than
+through a PR — a slip, not a decision; later sessions should go back to a branch
+per session, since the PR trail is part of what makes the history readable.
 
 ## Do not regress
 
@@ -111,7 +143,8 @@ table.
   next to a real operator's address. Worth a second look before publishing
   screenshots.
 - **The repo is still private.** The plan says go public once Sessions 0–6 and 9
-  are done. 9 (the frontend split and error states) has not been started.
+  are done; 9 (the frontend split and error states) has not been started. Going
+  public would also make CI run for free, so the two decisions are linked.
 
 ## Environment notes
 
