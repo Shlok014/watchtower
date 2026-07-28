@@ -1,0 +1,66 @@
+{
+  "dataset": {
+    "name": "loghub HDFS_v1",
+    "subset": "full",
+    "lines_read": 11175629,
+    "lines_with_block_id": 11175629,
+    "blocks": 575061,
+    "anomalous_blocks": 16838,
+    "anomaly_rate": 0.02928,
+    "templates": 45
+  },
+  "split": {
+    "method": "stratified 50/50",
+    "seed": 42,
+    "train": 287530,
+    "test": 287531
+  },
+  "parsing": {
+    "seconds": 168.6,
+    "lines_per_second": 66273
+  },
+  "models": {
+    "LogisticRegression": {
+      "supervised": true,
+      "fit_seconds": 2.21,
+      "precision": 0.9605,
+      "recall": 0.9998,
+      "f1": 0.9797,
+      "tp": 8417,
+      "fp": 346,
+      "fn": 2,
+      "tn": 278766,
+      "roc_auc": 0.9994
+    },
+    "DecisionTree": {
+      "supervised": true,
+      "fit_seconds": 0.61,
+      "precision": 0.9986,
+      "recall": 0.9987,
+      "f1": 0.9986,
+      "tp": 8408,
+      "fp": 12,
+      "fn": 11,
+      "tn": 279100,
+      "roc_auc": 0.9996
+    },
+    "IsolationForest": {
+      "supervised": false,
+      "fit_seconds": 2.39,
+      "precision": 0.0774,
+      "recall": 0.0777,
+      "f1": 0.0775,
+      "tp": 654,
+      "fp": 7797,
+      "fn": 7765,
+      "tn": 271315,
+      "roc_auc": 0.7141
+    }
+  },
+  "environment": {
+    "python": "3.14.1",
+    "sklearn": "1.9.0",
+    "numpy": "2.5.1",
+    "platform": "Darwin arm64"
+  }
+}

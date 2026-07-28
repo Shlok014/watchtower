@@ -24,7 +24,8 @@ and a SHA-256 hash-chained audit ledger — Flask + React.**
 | Log ingestion | In-process list; synthetic generator thread, 7 source profiles. Every event carries `origin: "synthetic"`. | ⚠️ synthetic input, honestly labelled |
 | Normalization | Severity and event-type classification | ✅ real |
 | **IP reputation** | Live lookup against the **Tor Project bulk exit list** (1,380 entries) and **FireHOL level1** (4,580 CIDRs), cached locally with a provenance manifest. Every verdict names its feed and fetch date. Non-routable addresses short-circuit before the lookup. | ✅ **real, measured** |
-| Detection | Sliding-window features (failed logins/60s, event rate/30s) + reputation, weighted. Deterministic: identical input and window state give an identical score. Versioned by the hash of the weights themselves. | ✅ real rules — **not** ML, and not called ML |
+| Detection (live dashboard) | Sliding-window features (failed logins/60s, event rate/30s) + reputation, weighted. Deterministic: identical input and window state give an identical score. Versioned by the hash of the weights themselves. | ✅ real rules — **not** ML, and not called ML |
+| **Detection (benchmark)** | **Drain3 template mining → per-block count vectors → scikit-learn**, measured on the full HDFS_v1 benchmark. Separate from the live dashboard, and [docs/METRICS.md](docs/METRICS.md) says so. | ✅ **real, measured** |
 | Alerting | Threshold 0.45, every alert carries the rules that fired and their evidence | ✅ real |
 | SOAR | Playbook *selection* is real; steps are labelled `selected`, `executed: false`, and nothing is contacted | ⚠️ no integrations — and the UI says so |
 | **Audit ledger** | **Tamper-evident.** Every digest is recomputed from the live event row on verify, and the header digest covers height, timestamp, prev_hash and payload — so editing an event, rewriting a block, back-dating one, or deleting one is all detected and distinguished. | ✅ **real** |
@@ -83,10 +84,52 @@ of detecting real attacks.
 - [x] Real IP reputation from public threat feeds
 - [x] SQLite persistence (WAL) replacing shared mutable lists
 - [x] Content-addressed hash chain with real tamper detection + a tamper demo
-- [ ] Drain3 log parsing + a trained model measured on the HDFS_v1 benchmark
+- [x] Drain3 log parsing + a trained model measured on the HDFS_v1 benchmark
+- [ ] Wire the trained model into a dataset-replay mode
 - [ ] Real ingestion sources: syslog listener, file tailer, dataset replay
 - [ ] SOAR blocklist the pipeline actually enforces
 - [ ] Tests + CI
+
+## Measured results
+
+Full numbers, and how to reproduce them: **[docs/METRICS.md](docs/METRICS.md)**.
+Every figure there is emitted by `python -m eval.benchmark`; none is typed by
+hand.
+
+**Log parsing** — grouping accuracy against loghub's ground-truth templates:
+
+| Dataset | True templates | Mined | Grouping accuracy |
+|---|---:|---:|---:|
+| HDFS_2k | 14 | 16 | **0.9975** |
+| OpenSSH_2k | 27 | 23 | **0.7180** |
+
+**Anomaly detection** — loghub HDFS_v1, all 11,175,629 lines, 575,061 labelled
+blocks (2.93% anomalous), 45 mined templates, stratified 50/50 split at seed 42:
+
+| Model | Supervised | Precision | Recall | F1 | ROC-AUC |
+|---|---|---:|---:|---:|---:|
+| LogisticRegression | yes | 0.9605 | 0.9998 | **0.9797** | 0.9994 |
+| DecisionTree | yes | 0.9986 | 0.9987 | **0.9986** | 0.9996 |
+| IsolationForest | no | 0.0774 | 0.0777 | **0.0775** | 0.7141 |
+
+Pipeline throughput: **66,273 lines/sec** end to end (168.6s to parse and
+featurise 11.2M lines).
+
+Three things worth saying plainly rather than letting the table imply otherwise:
+
+* **HDFS is a near-separable benchmark.** F1 above 0.95 on template count
+  vectors is the expected result here and matches published loglizer baselines.
+  It is not evidence of anything novel in this repo.
+* **The unsupervised row is bad, and it is the honest one.** IsolationForest gets
+  0.0775 — that is the real cost of having no labels, which is exactly the
+  situation the live dashboard is in.
+* **These results are about HDFS, not the dashboard.** The live stream is
+  synthetic and its detection is a rule engine. The two are deliberately
+  separate and neither page claims otherwise.
+
+Both the OpenSSH row and the IsolationForest row could have been quietly
+omitted. They are here because a results table that only contains its best
+numbers is not a results table.
 
 ## Storage
 

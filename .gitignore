@@ -55,3 +55,7 @@ data/raw/
 data/processed/
 data/feeds/
 models/
+
+# Benchmark datasets — fetched by `python -m datasets.download`, never committed
+backend/data/datasets/
+backend/data/drain/
