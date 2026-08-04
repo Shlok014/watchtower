@@ -27,7 +27,7 @@ and a SHA-256 hash-chained audit ledger — Flask + React.**
 | Detection (live dashboard) | Sliding-window features (failed logins/60s, event rate/30s) + reputation, weighted. Deterministic: identical input and window state give an identical score. Versioned by the hash of the weights themselves. | ✅ real rules — **not** ML, and not called ML |
 | **Detection (model)** | **Drain3 template mining → per-block count vectors → scikit-learn**, measured on the full HDFS_v1 benchmark and persisted as a versioned artefact. `POST /api/v1/retrain` refits it and returns a real delta — 0.0000 on unchanged data. Live replay scores partial blocks and never borrows the benchmark's F1. | ✅ **real, measured, versioned** |
 | Alerting | Threshold 0.45, every alert carries the rules that fired and their evidence | ✅ real |
-| SOAR | Playbook *selection* is real; steps are labelled `selected`, `executed: false`, and nothing is contacted | ⚠️ no integrations — and the UI says so |
+| **SOAR** | **A closed loop.** YAML playbooks; `block_ip` writes to a blocklist the consumer checks *before* detection, so a blocked address really is suppressed and the drops are counted. Webhooks POST for real. Incident reports are real files citing the ledger blocks that cover their evidence. Alert status is earned: `contained` / `action_failed`, never assumed. | ✅ **real** — enforcement is at the ingestion layer, not a firewall |
 | **Audit ledger** | **Tamper-evident.** Every digest is recomputed from the live event row on verify, and the header digest covers height, timestamp, prev_hash and payload — so editing an event, rewriting a block, back-dating one, or deleting one is all detected and distinguished. | ✅ **real** |
 | Telemetry | Measured: per-stage p50/p95 via `perf_counter`, real RSS, real CPU, real 60s-window throughput, real uptime | ✅ real, measured |
 | **Persistence** | **SQLite in WAL mode.** One transaction per event covers the row, its alert, its SOAR record and its ledger block. Survives restart. Events retained 24h unless an alert cites them; the ledger is append-only and exempt. | ✅ **real** |
@@ -99,6 +99,104 @@ it says, and it is why real deployments scope rate rules by source type as well.
 
 The loghub **2k samples are committed** (~1.2 MB), so replay and the
 parsing-accuracy eval both run on a clean clone with nothing downloaded.
+
+## Response, and what "enforced" means here
+
+Playbooks are YAML in [`backend/playbooks/`](backend/playbooks) — trigger,
+priority, and an ordered list of actions each marked `required` or not.
+Detection-to-response policy is configuration, not a dict in a Python file.
+
+```yaml
+name: Brute force containment
+trigger: brute_force
+priority: P1
+actions:
+  - action: block_ip
+    required: true
+    ttl_seconds: 3600
+  - action: incident_report
+    required: true
+  - action: webhook
+    required: false      # nothing is configured by default, and a missing
+                         # notifier must not make containment "fail"
+```
+
+### The closed loop
+
+`block_ip` writes to a `blocklist` table. The pipeline consumer checks that
+table **before detection runs**, marks matching events `dropped=1`, and counts
+the hit against the block that caused it. Measured on a live instance:
+
+```
+$ curl -X POST localhost:5001/api/v1/simulate-attack -d '{"attack_type":"brute_force"}'
+  Brute Force Attack triggered — 12 malicious events
+
+$ curl localhost:5001/api/v1/blocklist
+  192.0.2.45   repeated authentication failures   dropped=10   ttl=3598s
+  totals: {active_blocks: 1, events_dropped_lifetime: 10}
+```
+
+Twelve events arrived, one alerted, the address was blocked, and the remaining
+ten were **really discarded** before the detector saw them. That is a detect →
+respond → enforce → observe loop with nothing simulated in the middle, and
+`test_blocked_address_produces_no_further_alerts` fails if any link breaks.
+
+Checked before detection, deliberately: running the rules first and throwing the
+verdict away would keep the alert count climbing for an address that is supposed
+to be silenced — the "we blocked it" / "then why is it still alerting"
+contradiction.
+
+### Scope, stated rather than implied
+
+**Nothing here touches pf, iptables, or any firewall, and nothing needs root.**
+Enforcement is at this application's own ingestion layer. *"Real firewall
+integration would need pfctl and root; I scoped enforcement to the pipeline"* is
+a defensible decision. A `pfctl` wrapper nobody dares demo is not.
+
+The other actions are equally literal:
+
+* **`webhook`** — a real `POST` with a 3-second timeout. Connection refused is
+  recorded `failed`, not swallowed: a notifier that silently drops alerts is
+  worse than no notifier, because the operator believes someone was told. With
+  no `WATCHTOWER_WEBHOOK_URL` set it reports **`skipped`** — "nothing is
+  configured" and "it was tried and broke" are different facts.
+* **`incident_report`** — writes a real `INC-<date>-<seq>.md` and `.json` with
+  the evidence event ids **and the ledger blocks covering them**, so the report
+  points at something whose integrity can be independently checked. It also says
+  in its own text that it is a record, not a remediation.
+* The `malware_detected` playbook deliberately contains **no** `block_ip`. This
+  process cannot isolate a host, so it records the incident and says the rest
+  was not executed, rather than blocking an address as a substitute for the
+  response it could not run.
+
+### Status is earned
+
+| Status | Means |
+|---|---|
+| `open` | raised; nothing has run |
+| `contained` | every required step succeeded **and one had a real side effect** |
+| `action_failed` | a required step failed — the alert stays visible |
+
+What this replaced set `alert["status"] = "mitigated"` on the line after
+selecting a playbook. Selecting only built a dict, so **every alert in the
+system claimed to have been remediated the instant it was raised**, with a green
+tick beside each one.
+
+A playbook of `notify` and `webhook` can never reach `contained`. It has told
+somebody; it has not fixed anything.
+
+### The ledger covers the enforcement record
+
+`dropped` is inside the payload digest, so flipping it `1 → 0` with raw SQL is
+detected. In a system whose claim is that enforcement is real, which traffic was
+suppressed is exactly the field worth protecting.
+
+That addition required a second canonicalisation version. Each block records the
+serialisation it was written under and is verified with **that one** — otherwise
+adding a single field retroactively accuses every historical block of tampering,
+and a false alarm is indistinguishable in the output from a real one. Both cases
+are tested, along with a block naming a canon this build cannot reproduce, which
+reports that it can neither confirm nor refute the digest rather than guessing.
 
 ## Threat intelligence
 
@@ -317,10 +415,12 @@ recomputes something — which is the whole point.
 cd backend && .venv/bin/python -m pytest
 ```
 
-96 tests covering the HTTP contract, the four ingestion sources (including a real
+128 tests covering the HTTP contract, the four ingestion sources (including a real
 UDP datagram end to end, and a tailer surviving both rotation and in-place
-truncation), model versioning and the zero-delta retrain, bounded live block
-scoring, provenance constraints, concurrent writers against a live
+truncation), the SOAR closed loop (blocked address → zero further alerts, N real
+drops), playbook validation, a webhook against a real HTTP server and a closed
+port, model versioning and the zero-delta retrain, bounded live block scoring,
+provenance constraints, concurrent writers against a live
 reader, retention (including that an alert-referenced event is never pruned and
 that lifetime counters do not fall when it runs), transaction rollback leaving a
 usable connection, restart durability, and every ledger tamper mode — event

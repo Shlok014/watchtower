@@ -1,0 +1,23 @@
+# Detection-to-response policy as data, not as a dict in a Python file.
+#
+# `required: true` is the load-bearing field. An alert reaches `mitigated` only
+# when every required step succeeded; if one fails the alert becomes
+# `action_failed` and stays visible. The version this replaced set
+# alert["status"] = "mitigated" on the line after selecting a playbook, so every
+# alert in the system claimed to have been remediated the instant it was raised.
+name: Brute force containment
+trigger: brute_force
+priority: P1
+actions:
+  - action: block_ip
+    required: true
+    ttl_seconds: 3600
+    reason: repeated authentication failures
+  - action: incident_report
+    required: true
+  - action: webhook
+    required: false          # no endpoint is configured by default, and a
+                             # missing notifier must not make containment fail
+  - action: notify
+    required: false
+    message: security team paged for brute force from {ip}

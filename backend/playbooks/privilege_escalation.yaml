@@ -1,0 +1,11 @@
+name: Privilege escalation response
+trigger: privilege_escalation
+priority: P1
+actions:
+  - action: incident_report
+    required: true
+  - action: webhook
+    required: false
+  - action: notify
+    required: false
+    message: privilege escalation by {user} from {ip} — session NOT terminated

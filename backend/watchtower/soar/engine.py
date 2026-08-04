@@ -1,102 +1,124 @@
-"""Playbook selection.
+"""Execute a response playbook, and report exactly what happened.
 
-Written in the imperative — "Block IP", not "IP Blocked".
+The status lifecycle is the whole point of this module:
 
-The past tense mattered more than it looks. Combined with a ✓ in the UI and a
-"completed" status, "IP Blocked" reads as a record of a remediation that
-happened. Nothing here contacts a firewall, a mail server or a ticket system, so
-these are the steps a playbook *would* run.
+    open            the alert was raised and nothing has run yet
+    contained       every required step succeeded, and at least one had a real
+                    side effect
+    mitigated       every required step succeeded and the playbook considers
+                    the incident closed
+    action_failed   a required step failed. The alert stays visible.
+
+What this replaces set ``alert["status"] = "mitigated"`` on the line after
+selecting a playbook. Selecting a playbook only built a dict, so every alert in
+the system claimed to have been remediated the instant it was raised — and the
+UI showed a green tick beside each one.
+
+A status is now earned by an action that actually ran, and an action reports
+``skipped`` when nothing is configured for it rather than pretending either way.
 """
 
 import time
 from datetime import UTC, datetime
 
-PLAYBOOKS = {
-    "brute_force": {
-        "actions": ["Block IP", "Terminate session", "Send alert email", "Open incident ticket"],
-        "priority": "P1",
-    },
-    "suspicious_ip": {
-        "actions": ["Block IP", "Update firewall rule", "Send alert email"],
-        "priority": "P2",
-    },
-    "malware_detected": {
-        "actions": ["Isolate host", "Trigger AV scan", "Send alert email", "Open incident ticket"],
-        "priority": "P1",
-    },
-    "port_scan": {"actions": ["Block IP", "Update IDS rule", "Send alert email"], "priority": "P2"},
-    "privilege_escalation": {
-        "actions": [
-            "Terminate session",
-            "Lock account",
-            "Send alert email",
-            "Open incident ticket",
-            "Start forensics",
-        ],
-        "priority": "P1",
-    },
-    "data_exfiltration": {
-        "actions": [
-            "Isolate network segment",
-            "Terminate session",
-            "Send alert email",
-            "Start forensics",
-        ],
-        "priority": "P1",
-    },
-    "failed_login": {
-        "actions": ["Send alert email", "Enable account monitoring"],
-        "priority": "P3",
-    },
-}
+from . import actions as actions_mod
+from . import playbooks as playbooks_mod
 
-DEFAULT_PLAYBOOK = {"actions": ["Notify", "Log to SIEM"], "priority": "P3"}
+OPEN = "open"
+CONTAINED = "contained"
+MITIGATED = "mitigated"
+ACTION_FAILED = "action_failed"
+
+# Actions with a side effect on the world outside this process's own bookkeeping.
+# Reaching `contained` requires at least one of them to have run: a playbook
+# whose only successful step was writing a log line has not contained anything.
+ENFORCING_ACTIONS = {"block_ip"}
 
 
-def respond(alert_entry: dict) -> dict:
-    """Select a response playbook for an alert.
-
-    No step here has a side effect: nothing contacts a firewall, sends mail, or
-    opens a ticket. The previous version disguised that by inventing a per-step
-    ``duration_ms = random.randint(120, 850)`` and stamping each step "completed"
-    with a timestamp in the future, producing an execution trace detailed enough
-    to be mistaken for a real one.
-
-    Timings are now measured, which honestly yields microseconds, and every
-    field says the step was selected rather than performed.
-    """
-    event = alert_entry["event"]
-    playbook = PLAYBOOKS.get(event, DEFAULT_PLAYBOOK)
-    actions = playbook["actions"]
-
+def respond(conn, alert: dict) -> dict:
+    """Run the playbook for this alert. Returns the execution record."""
+    playbook = playbooks_mod.for_event(alert.get("event", ""))
     ts = datetime.now(UTC)
-    steps = []
     t_start = time.perf_counter()
-    for action in actions:
-        t0 = time.perf_counter()
-        # This is where a real integration would run. There isn't one.
+
+    steps = []
+    required_failed = False
+    enforced = False
+    executed_any = False
+
+    for step in playbook.steps:
+        ctx = actions_mod.Context(conn=conn, alert=alert, step_params=step.params)
+        outcome = actions_mod.run(step.action, ctx)
+        if outcome.executed:
+            executed_any = True
+            if step.action in ENFORCING_ACTIONS:
+                enforced = True
+        if outcome.failed and step.required:
+            required_failed = True
         steps.append(
             {
-                "action": action,
-                "status": "selected",
-                "executed": False,
-                "duration_us": round((time.perf_counter() - t0) * 1e6, 1),
-                "detail": "no integration configured — step selected, not executed",
+                "action": step.action,
+                "status": outcome.status,
+                "required": step.required,
+                "executed": outcome.executed,
+                "duration_us": outcome.duration_us,
+                "detail": outcome.detail,
             }
         )
+
     total_us = round((time.perf_counter() - t_start) * 1e6, 1)
 
+    if required_failed:
+        status = ACTION_FAILED
+    elif enforced:
+        status = CONTAINED
+    elif executed_any:
+        # Something ran, nothing was enforced. "mitigated" would overstate it,
+        # and "open" would understate it. This is what the playbook could do.
+        status = MITIGATED if _closes(playbook) else OPEN
+    else:
+        status = OPEN
+
     return {
-        "alert_id": alert_entry["id"],
+        "alert_id": alert["id"],
         "timestamp": ts.isoformat(),
-        "event": event,
-        "ip": alert_entry["ip"],
-        # Renamed from `actions_taken`: nothing was taken.
-        "playbook_steps": actions,
+        "event": alert["event"],
+        "ip": alert["ip"],
+        "playbook": playbook.name,
+        "playbook_source": playbook.source,
+        "playbook_steps": [s.action for s in playbook.steps],
         "execution_steps": steps,
-        "execution_mode": "simulated",
+        # 'live' now: at least one action in this build has a real side effect.
+        # The column still admits 'simulated' because a build with every
+        # integration removed should be able to say so.
+        "execution_mode": "live",
         "selection_time_us": total_us,
-        "status": "selected",
-        "priority": playbook["priority"],
-        "playbook": f"PB-{event.upper().replace('_', '-')}",
+        "status": status,
+        "priority": playbook.priority,
     }
+
+
+def _closes(playbook) -> bool:
+    """Does succeeding at this playbook actually resolve the incident?
+
+    Only when a required step had a real side effect. A playbook of notify and
+    webhook has told somebody; it has not fixed anything, and calling that
+    'mitigated' is how the previous version came to mark every alert resolved.
+    """
+    return any(s.required and s.action in ENFORCING_ACTIONS for s in playbook.steps)
+
+
+def describe() -> list[dict]:
+    """Every loaded playbook, for the API. Policy should be inspectable."""
+    return [
+        {
+            "name": pb.name,
+            "trigger": pb.trigger,
+            "priority": pb.priority,
+            "source": pb.source,
+            "steps": [
+                {"action": s.action, "required": s.required, "params": s.params} for s in pb.steps
+            ],
+        }
+        for pb in playbooks_mod.all_playbooks().values()
+    ]

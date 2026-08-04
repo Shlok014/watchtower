@@ -18,7 +18,7 @@ from .normalize import normalize_log
 
 
 def create_alert(conn, log_entry: dict, detection_result: dict, event_id: int) -> dict:
-    """Create an alert from an anomalous log, and select a response playbook."""
+    """Create an alert, run its response playbook, and record what happened."""
     alert = {
         "timestamp": datetime.now(UTC).isoformat(),
         "event": log_entry["event"],
@@ -37,12 +37,15 @@ def create_alert(conn, log_entry: dict, detection_result: dict, event_id: int) -
     }
     alert["id"] = repos.insert_alert(conn, alert, event_id)
 
-    # The status stays "open". It used to be set to "mitigated" on the line
-    # after the playbook was selected — but selection only builds a dict, so
-    # every alert in the system claimed to have been remediated the instant it
-    # was raised. A status has to be earned by an action that actually ran.
-    response = soar.respond(alert)
+    # The playbook runs, and the alert's status is then whatever the playbook
+    # earned. It used to be set to "mitigated" on the line after selecting a
+    # playbook — and selection only built a dict, so every alert in the system
+    # claimed to have been remediated the instant it was raised.
+    response = soar.respond(conn, alert)
     response["id"] = repos.insert_soar(conn, response, alert["id"])
+    if response["status"] != "open":
+        repos.set_alert_status(conn, alert["id"], response["status"])
+        alert["status"] = response["status"]
     alert["soar_response"] = response
     return alert
 
@@ -67,25 +70,50 @@ def process_log(raw_log: dict) -> dict:
     # event would leave a ledger block chained to a log entry that does not
     # exist.
     with store_db.write() as conn:
+        # ── enforcement, before detection ──
+        # This is the closed loop's other half. A blocked address has its
+        # events suppressed here, so the block is a real consequence rather
+        # than a row in a table that nothing reads.
+        #
+        # Before detection, deliberately: running the rules first and
+        # discarding the verdict would keep the alert count climbing for an
+        # address that is supposed to be silenced, which is precisely the
+        # "we blocked it" / "then why is it still alerting" contradiction.
+        block = repos.blocked_entry(conn, normalized["ip"])
+        normalized["dropped"] = bool(block)
+
         t0 = time.perf_counter()
         event_id = repos.insert_event(conn, normalized, ingested_ts_ms)
         normalized["id"] = event_id
         event_ts_ms = repos.from_iso(normalized["timestamp"])
         telemetry.record("ingest", time.perf_counter() - t0)
 
-        t0 = time.perf_counter()
-        detection = rules.detect(conn, normalized, ingested_ts_ms)
-        telemetry.record("detect", time.perf_counter() - t0)
-
-        if detection["is_anomaly"]:
-            t0 = time.perf_counter()
-            create_alert(conn, normalized, detection, event_id)
-            telemetry.record("alert", time.perf_counter() - t0)
-
+        # The ledger chains the event as it arrived, before anything decides
+        # what it means, and whether or not the blocklist suppressed it. Two
+        # reasons, and the second was found by a test:
+        #
+        #  * An audit ledger that omits the events a response action silenced
+        #    has a hole exactly where the interesting traffic is.
+        #  * Chaining last meant an incident report written during the alert
+        #    could not cite the block covering its own triggering event — the
+        #    block did not exist yet. A report whose evidence points at nothing
+        #    verifiable is a press release.
         t0 = time.perf_counter()
         ledger.append(conn, normalized, event_id, event_ts_ms, ingested_ts_ms)
         repos.bump(conn, "blocks")
         telemetry.record("ledger", time.perf_counter() - t0)
+
+        if block:
+            repos.record_block_hit(conn, normalized["ip"])
+        else:
+            t0 = time.perf_counter()
+            detection = rules.detect(conn, normalized, ingested_ts_ms)
+            telemetry.record("detect", time.perf_counter() - t0)
+
+            if detection["is_anomaly"]:
+                t0 = time.perf_counter()
+                create_alert(conn, normalized, detection, event_id)
+                telemetry.record("alert", time.perf_counter() - t0)
 
     telemetry.record("pipeline", time.perf_counter() - t_pipeline)
     telemetry.record_event()
@@ -107,6 +135,10 @@ def housekeeping() -> None:
     try:
         with store_db.write() as conn:
             repos.prune(conn)
+            # Expiry is already enforced by the blocklist lookup, so this only
+            # reclaims rows. Relying on a sweep to stop enforcement would mean a
+            # lagging sweep goes on dropping traffic past its TTL.
+            repos.purge_expired_blocks(conn)
         store_db.checkpoint()
     except Exception as exc:
         # Surfaced, not swallowed: a store that stopped pruning is a store that

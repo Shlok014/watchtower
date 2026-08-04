@@ -82,6 +82,8 @@ def _event_row_to_dict(r) -> dict:
         "message": r["message"],
         "log_format": r["log_format"],
         "origin": r["origin"],
+        # Suppressed by the blocklist before detection ran.
+        "dropped": bool(r["dropped"]),
         # Re-nested: the frontend reads log.reputation?.verdict / .detail.
         "reputation": {
             "verdict": r["rep_verdict"],
@@ -103,9 +105,9 @@ def insert_event(conn, normalized: dict, ingested_ts_ms: int) -> int:
         raise ValueError(f"event {normalized.get('id')} has no origin")
     cur = conn.execute(
         """INSERT INTO events (ts_ms, ingested_ts_ms, source, event, event_type, severity,
-                               ip, user, message, log_format, origin,
+                               ip, user, message, log_format, origin, dropped,
                                rep_verdict, rep_score, rep_sources, rep_checked, rep_detail)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (
             from_iso(normalized["timestamp"]),
             ingested_ts_ms,
@@ -118,6 +120,7 @@ def insert_event(conn, normalized: dict, ingested_ts_ms: int) -> int:
             normalized["message"],
             normalized["log_format"],
             origin,
+            1 if normalized.get("dropped") else 0,
             rep.get("verdict", "unavailable"),
             float(rep.get("score", 0.0)),
             json.dumps(rep.get("sources", [])),
@@ -154,17 +157,21 @@ def recent_events(limit=100, severity=None, source=None, search=None) -> list[di
 # ── detection windows ────────────────────────────────────────────────────────
 # Keyed on ingested_ts_ms, not ts_ms: replayed events carry their original
 # timestamps, so a window over event time would never match anything.
+# Dropped events are excluded. They were suppressed before detection ran, so
+# counting them would let a blocked address keep driving the windows for every
+# other address it shares a rule with — and would make the count disagree with
+# the alerts it is supposed to explain.
 def failed_logins_in_window(conn, ip: str, since_ms: int) -> int:
     return conn.execute(
         "SELECT count(*) FROM events WHERE ip = ? AND event = 'failed_login' "
-        "AND ingested_ts_ms > ?",
+        "AND ingested_ts_ms > ? AND dropped = 0",
         (ip, since_ms),
     ).fetchone()[0]
 
 
 def events_in_window(conn, ip: str, since_ms: int) -> int:
     return conn.execute(
-        "SELECT count(*) FROM events WHERE ip = ? AND ingested_ts_ms > ?",
+        "SELECT count(*) FROM events WHERE ip = ? AND ingested_ts_ms > ? AND dropped = 0",
         (ip, since_ms),
     ).fetchone()[0]
 
@@ -217,6 +224,16 @@ def insert_alert(conn, alert: dict, event_id: int | None) -> int:
     return cur.lastrowid
 
 
+def set_alert_status(conn, alert_id: int, status: str) -> None:
+    """Record the status a response playbook actually earned.
+
+    The CHECK constraint on the column is the backstop: the old code wrote
+    'mitigated' unconditionally, and a typo'd status now fails loudly instead of
+    landing in the database and rendering as a green tick.
+    """
+    conn.execute("UPDATE alerts SET status = ? WHERE id = ?", (status, alert_id))
+
+
 def recent_alerts(limit=50) -> list[dict]:
     conn = db.connect()
     rows = conn.execute("SELECT * FROM alerts ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
@@ -248,6 +265,7 @@ def _soar_rows(conn, sql: str, params) -> list[dict]:
                 "action": s["action"],
                 "status": s["status"],
                 "executed": bool(s["executed"]),
+                "required": bool(s["required"]),
                 "duration_us": s["duration_us"],
                 "detail": s["detail"],
             }
@@ -291,8 +309,8 @@ def insert_soar(conn, response: dict, alert_id: int) -> int:
     exec_id = cur.lastrowid
     conn.executemany(
         """INSERT INTO soar_steps (execution_id, position, action, status, executed,
-                                   duration_us, detail)
-           VALUES (?,?,?,?,?,?,?)""",
+                                   required, duration_us, detail)
+           VALUES (?,?,?,?,?,?,?,?)""",
         [
             (
                 exec_id,
@@ -300,6 +318,7 @@ def insert_soar(conn, response: dict, alert_id: int) -> int:
                 s["action"],
                 s["status"],
                 1 if s["executed"] else 0,
+                1 if s.get("required") else 0,
                 s["duration_us"],
                 s["detail"],
             )
@@ -483,8 +502,134 @@ def reset_all(conn) -> dict:
     remove.
     """
     deleted = {}
-    for table in ("soar_steps", "soar_executions", "alerts", "events", "ledger"):
+    for table in ("soar_steps", "soar_executions", "alerts", "events", "ledger", "blocklist"):
         deleted[table] = conn.execute(f"DELETE FROM {table}").rowcount
     conn.execute("UPDATE counters SET value = 0")
     # Reclaim the freed pages; auto_vacuum=INCREMENTAL only frees on request.
     return deleted
+
+
+# ── blocklist ────────────────────────────────────────────────────────────────
+# The closed loop. `block_ip` writes here; the consumer checks it before
+# detection runs. Enforcement is at this application's ingestion layer — nothing
+# touches a firewall and nothing needs root.
+def block_ip(conn, ip: str, reason: str, alert_id: int | None, ttl_seconds: int) -> dict:
+    """Block an address, or extend an existing block. Returns the row.
+
+    ON CONFLICT extends rather than inserting a second row. Two rows for one
+    address would split its hit count in half, and every "N events dropped from
+    X" figure the dashboard shows would be an undercount.
+
+    The expiry is `max(existing, new)`: re-blocking with a shorter TTL must not
+    shorten a longer block that is already running.
+    """
+    now = now_ms()
+    expires = now + ttl_seconds * 1000
+    conn.execute(
+        """INSERT INTO blocklist (ip, reason, alert_id, created_ts_ms, expires_ts_ms, hits)
+           VALUES (?,?,?,?,?,0)
+           ON CONFLICT(ip) DO UPDATE SET
+               reason        = excluded.reason,
+               alert_id      = excluded.alert_id,
+               expires_ts_ms = max(blocklist.expires_ts_ms, excluded.expires_ts_ms)""",
+        (ip, reason, alert_id, now, expires),
+    )
+    row = conn.execute("SELECT * FROM blocklist WHERE ip = ?", (ip,)).fetchone()
+    return dict(row)
+
+
+def blocked_entry(conn, ip: str) -> dict | None:
+    """The live block for this address, or None.
+
+    Expiry is checked in the query rather than by a sweep, so a block stops
+    applying the millisecond it expires even if housekeeping has not run. A
+    sweep that lagged would keep dropping traffic after the TTL, which is the
+    kind of over-enforcement nobody notices until it matters.
+    """
+    row = conn.execute(
+        "SELECT * FROM blocklist WHERE ip = ? AND expires_ts_ms > ?", (ip, now_ms())
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def record_block_hit(conn, ip: str) -> None:
+    conn.execute(
+        "UPDATE blocklist SET hits = hits + 1, last_hit_ts_ms = ? WHERE ip = ?",
+        (now_ms(), ip),
+    )
+    bump(conn, "dropped")
+
+
+def _blocklist_row(r, now: int) -> dict:
+    return {
+        "ip": r["ip"],
+        "reason": r["reason"],
+        "alert_id": r["alert_id"],
+        "blocked_at": to_iso(r["created_ts_ms"]),
+        "expires_at": to_iso(r["expires_ts_ms"]),
+        "expired": r["expires_ts_ms"] <= now,
+        "seconds_remaining": max(0, (r["expires_ts_ms"] - now) // 1000),
+        "events_dropped": r["hits"],
+        "last_hit_at": to_iso(r["last_hit_ts_ms"]) if r["last_hit_ts_ms"] else None,
+    }
+
+
+def blocklist(conn=None, include_expired: bool = False, limit: int = 100) -> list[dict]:
+    conn = conn or db.connect()
+    now = now_ms()
+    sql = "SELECT * FROM blocklist"
+    params: list = []
+    if not include_expired:
+        sql += " WHERE expires_ts_ms > ?"
+        params.append(now)
+    sql += " ORDER BY hits DESC, created_ts_ms DESC LIMIT ?"
+    params.append(limit)
+    return [_blocklist_row(r, now) for r in conn.execute(sql, params)]
+
+
+def unblock(conn, ip: str) -> bool:
+    """Remove a block outright. Returns whether there was one."""
+    cur = conn.execute("DELETE FROM blocklist WHERE ip = ?", (ip,))
+    return cur.rowcount > 0
+
+
+def purge_expired_blocks(conn) -> int:
+    """Housekeeping. Expiry is already enforced by the lookup; this reclaims rows."""
+    return conn.execute("DELETE FROM blocklist WHERE expires_ts_ms <= ?", (now_ms(),)).rowcount
+
+
+def blocklist_totals(conn=None) -> dict:
+    conn = conn or db.connect()
+    now = now_ms()
+    active = conn.execute(
+        "SELECT count(*), coalesce(sum(hits), 0) FROM blocklist WHERE expires_ts_ms > ?", (now,)
+    ).fetchone()
+    return {
+        "active_blocks": active[0],
+        "events_dropped_by_active_blocks": active[1],
+        "events_dropped_lifetime": counters().get("dropped", 0),
+    }
+
+
+def recent_events_for_ip(conn, ip: str, limit: int = 20) -> list[dict]:
+    """Evidence for an incident report."""
+    return [
+        _event_row_to_dict(r)
+        for r in conn.execute(
+            "SELECT * FROM events WHERE ip = ? ORDER BY id DESC LIMIT ?", (ip, limit)
+        )
+    ]
+
+
+def ledger_heights_for_events(conn, event_ids: list[int]) -> list[int]:
+    """Which ledger blocks cover these events. Empty if retention removed them."""
+    if not event_ids:
+        return []
+    marks = ",".join("?" * len(event_ids))
+    return [
+        r[0]
+        for r in conn.execute(
+            f"SELECT block_id FROM ledger WHERE event_id IN ({marks}) ORDER BY block_id",
+            event_ids,
+        )
+    ]
