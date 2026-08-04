@@ -13,6 +13,7 @@ alongside it will fail.
 import http.server
 import json
 import threading
+import time
 from datetime import UTC, datetime
 
 import pytest
@@ -539,3 +540,65 @@ HDFS_LINE_FOR_HOUSEKEEPING = (
     "081109 204005 35 INFO dfs.FSNamesystem: BLOCK* NameSystem.addStoredBlock: "
     "blockMap updated: 10.251.73.220:50010 is added to blk_7128370237687728475 size 67108864"
 )
+
+
+def test_a_slow_webhook_does_not_hold_the_write_lock(monkeypatch):
+    """The regression for the response blocking every other writer.
+
+    The webhook's network call used to run inside `BEGIN IMMEDIATE`, holding
+    SQLite's single write lock for its duration. Every other event waited behind
+    it, and past `busy_timeout` (5s) they failed outright with
+    `OperationalError: database is locked` — never written at all, printed by
+    the source thread, and gone.
+
+    What this test asserts is the property that prevents that: **the responses
+    overlap.** Four threads each raise an alert whose webhook blocks for a
+    second. Serialised behind the lock that is four seconds; concurrent it is
+    one.
+
+    It deliberately does not try to provoke "database is locked" itself. Doing
+    so needs a webhook slower than busy_timeout/threads — measured here, the
+    faithful pre-fix arrangement takes 4.3s for this workload and stays under
+    the 5s timeout, so a test tuned to trip it would be both slow and
+    fragile. Wall clock is the honest signal, and it separates the two designs
+    by 3x.
+    """
+    barrier = threading.Barrier(4, timeout=10)
+    webhook_seconds = 1.0
+
+    def slow_webhook(ctx):
+        time.sleep(webhook_seconds)
+        return actions.Outcome(actions.EXECUTED, "pretended to POST")
+
+    monkeypatch.setitem(actions.ACTIONS, "webhook", slow_webhook)
+
+    errors = []
+
+    def worker(n):
+        try:
+            barrier.wait()
+            process_log(_raw(ip=f"203.0.113.{10 + n}"))
+        except Exception as exc:  # noqa: BLE001 - the failure under test
+            errors.append(f"{type(exc).__name__}: {exc}")
+
+    threads = [threading.Thread(target=worker, args=(n,)) for n in range(4)]
+    started = time.monotonic()
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=30)
+    elapsed = time.monotonic() - started
+
+    assert errors == [], f"concurrent events failed: {errors}"
+    # Serialised behind the write lock this is >= 4s. Two is a generous ceiling
+    # that still fails loudly if the response moves back inside the transaction.
+    assert elapsed < 2 * webhook_seconds, (
+        f"{elapsed:.1f}s for four 1s webhooks — they serialised, so the write "
+        "lock is being held across the response again"
+    )
+
+    conn = db.connect()
+    assert conn.execute("SELECT count(*) FROM events").fetchone()[0] == 4
+    assert repos.counters()["events"] == 4
+    assert repos.counters()["blocks"] == 4
+    assert conn.execute("SELECT count(*) FROM soar_executions").fetchone()[0] == 4
