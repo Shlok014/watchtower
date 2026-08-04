@@ -27,7 +27,15 @@ const STALE_AFTER_MS = 6000
 /** Older than this and we stop calling it data. */
 const OFFLINE_AFTER_MS = 20000
 
-export function usePolling(fetchFn, intervalMs = 2000) {
+/**
+ * @param {() => Promise<void>} fetchFn  what to call each tick
+ * @param {number} intervalMs
+ * @param {{enabled?: boolean}} [opts]   when false, nothing polls and the status
+ *   stays OFFLINE. Flipping it to true fires a poll *immediately* rather than
+ *   waiting out an interval — otherwise the connection gate opens onto a
+ *   dashboard with no data in it for up to two seconds.
+ */
+export function usePolling(fetchFn, intervalMs = 2000, { enabled = true } = {}) {
   const [lastSuccessAt, setLastSuccessAt] = useState(null)
   const [error, setError] = useState(null)
   const [now, setNow] = useState(() => Date.now())
@@ -60,6 +68,7 @@ export function usePolling(fetchFn, intervalMs = 2000) {
   }, [])
 
   useEffect(() => {
+    if (!enabled) return undefined
     let cancelled = false
     const tick = () => {
       if (!cancelled) runOnce()
@@ -75,7 +84,11 @@ export function usePolling(fetchFn, intervalMs = 2000) {
       clearInterval(poll)
       clearInterval(clock)
     }
-  }, [runOnce, intervalMs])
+    // `enabled` is in the deps deliberately: it changes exactly once, when the
+    // connection gate opens, and that is precisely when an immediate poll is
+    // wanted. `fetchFn` is NOT in the deps — that is the churn this hook exists
+    // to prevent.
+  }, [runOnce, intervalMs, enabled])
 
   const ageMs = lastSuccessAt === null ? null : now - lastSuccessAt
   let status = LIVE

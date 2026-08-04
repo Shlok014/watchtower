@@ -7,7 +7,7 @@ really enforce → a tamper-evident audit ledger. Flask + React + scikit-learn.
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776ab.svg)](backend/requirements.txt)
 [![Node 20+](https://img.shields.io/badge/node-20%2B-5fa04e.svg)](frontend/package.json)
-[![Tests](https://img.shields.io/badge/tests-128%20backend%20%2B%2036%20frontend-34d399.svg)](#tests)
+[![Tests](https://img.shields.io/badge/tests-128%20backend%20%2B%2043%20frontend-34d399.svg)](#tests)
 
 <!-- No CI badge. GitHub Actions has been refused for billing since the
      workflow landed, so no run has ever gone green. The whole backend job was
@@ -95,7 +95,7 @@ than an accident:
 | **Audit ledger** | **Tamper-evident.** Every digest is recomputed from the live event row on verify, and the header digest covers height, timestamp, prev_hash and payload — so editing an event, rewriting a block, back-dating one, or deleting one is all detected and distinguished. | ✅ **real** |
 | Telemetry | Measured: per-stage p50/p95 via `perf_counter`, real RSS, real CPU, real 60s-window throughput, real uptime | ✅ real, measured |
 | **Persistence** | **SQLite in WAL mode.** One transaction per event covers the row, its alert, its SOAR record and its ledger block. Survives restart. Events retained 24h unless an alert cites them; the ledger is append-only and exempt. | ✅ **real** |
-| **Dashboard** | React + Chart.js. **LIVE / STALE / OFFLINE derived from the age of the last successful poll**, stale panels dimmed and labelled, an offline banner, and empty states that distinguish "no data" from "no backend". 16 components, an API client that throws on `!res.ok`, 36 Vitest tests. | ✅ **real** |
+| **Dashboard** | React + Chart.js. **LIVE / STALE / OFFLINE derived from the age of the last successful poll**, stale panels dimmed and labelled, an offline banner, and empty states that distinguish "no data" from "no backend". 16 components, an API client that throws on `!res.ok`, 43 Vitest tests. | ✅ **real** |
 
 Detection is a **rule engine**, deliberately. Three sliding-window features and a
 weighted sum is what SIEM correlation rules actually are; the dishonest part was
@@ -540,7 +540,7 @@ recomputes something — which is the whole point.
 
 ```bash
 cd backend  && .venv/bin/python -m pytest    # 128
-cd frontend && npm test                      # 36
+cd frontend && npm test                      # 43
 ```
 
 128 tests covering the HTTP contract, the four ingestion sources (including a real
@@ -567,7 +567,7 @@ make dev       # API on :5001, dashboard on :5173
 
 | | |
 |---|---|
-| `make test` | 128 backend + 36 frontend |
+| `make test` | 128 backend + 43 frontend |
 | `make lint` | ruff, eslint, and the honesty gate |
 | `make bench` | regenerate `docs/METRICS.md` from a real run |
 | `make demo` | verify the ledger, corrupt one event with raw SQL, verify again |
