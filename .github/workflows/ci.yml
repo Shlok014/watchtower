@@ -67,5 +67,6 @@ jobs:
 
       - run: npm ci
       - run: npm run lint
+      - run: npm run test
       # Catches broken imports and env misuse that lint and tests miss.
       - run: npm run build

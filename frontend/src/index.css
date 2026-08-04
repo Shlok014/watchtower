@@ -484,3 +484,90 @@ td.mono { font-family: var(--font-mono); }
 .loading-stage code { font-family: var(--font-mono); color: var(--cyan); }
 .chain-findings { margin: 0.4rem 0 0 1rem; padding: 0; font-size: 0.7rem; line-height: 1.5; }
 .chain-findings code { color: var(--red); font-family: var(--font-mono); }
+
+/* ─── Connection state ────────────────────────────────────────────────────────
+   The header pill used to be the string literal "LIVE" with a green dot, and
+   the dashboard kept rendering minutes-old data underneath it with no signal
+   that anything was wrong. */
+.header-status.conn-live   { color: #34d399; }
+.header-status.conn-stale  { color: #fbbf24; }
+.header-status.conn-offline{ color: #f87171; }
+.header-status.conn-stale .status-dot   { background: #fbbf24; box-shadow: 0 0 8px #fbbf24; animation: none; }
+.header-status.conn-offline .status-dot { background: #f87171; box-shadow: 0 0 8px #f87171; animation: none; }
+
+.conn-banner {
+  display: flex; align-items: center; gap: 0.85rem;
+  margin: 0 0 1rem 0; padding: 0.7rem 1rem;
+  border-radius: 8px; font-size: 0.85rem; line-height: 1.5;
+  border: 1px solid;
+}
+.conn-banner.stale   { background: rgba(251,191,36,0.08); border-color: rgba(251,191,36,0.35); color: #fbbf24; }
+.conn-banner.offline { background: rgba(248,113,113,0.09); border-color: rgba(248,113,113,0.4); color: #f87171; }
+.conn-banner-icon { font-size: 1.1rem; }
+.conn-banner-note { color: var(--text-dim); }
+.conn-banner .btn { margin-left: auto; flex-shrink: 0; }
+
+/* Stale data is dimmed rather than hidden: it is still the last thing that was
+   true, and hiding it would lose the only information available. */
+.panel-stale { opacity: 0.55; transition: opacity 0.4s ease; }
+.panel-stale::after {
+  content: 'stale'; position: absolute; top: 0.65rem; right: 0.9rem;
+  font-size: 0.6rem; letter-spacing: 0.08em; text-transform: uppercase;
+  color: #fbbf24; font-family: var(--font-mono);
+}
+.panel { position: relative; }
+
+.panel-note {
+  margin-top: 0.6rem; font-size: 0.72rem; line-height: 1.5;
+  color: var(--text-dim); font-style: italic;
+}
+
+/* ─── Provenance and enforcement ──────────────────────────────────────────── */
+.origin-tag {
+  font-family: var(--font-mono); font-size: 0.62rem; padding: 0.12rem 0.4rem;
+  border-radius: 4px; letter-spacing: 0.02em;
+  background: rgba(148,163,184,0.12); color: #94a3b8;
+}
+.origin-tag.origin-synthetic { background: rgba(167,139,250,0.14); color: #a78bfa; }
+.origin-tag.origin-replay    { background: rgba(56,189,248,0.14);  color: #38bdf8; }
+.origin-tag.origin-syslog    { background: rgba(52,211,153,0.14);  color: #34d399; }
+.origin-tag.origin-file      { background: rgba(251,191,36,0.14);  color: #fbbf24; }
+
+.dropped-tag {
+  margin-left: 0.3rem; font-family: var(--font-mono); font-size: 0.6rem;
+  padding: 0.1rem 0.35rem; border-radius: 4px;
+  background: rgba(248,113,113,0.15); color: #f87171;
+}
+tr.log-dropped { opacity: 0.5; }
+
+/* ─── Step outcomes ───────────────────────────────────────────────────────────
+   Three statuses that mean three different things, styled so they cannot be
+   mistaken for one another. The version this replaced showed a ✓ beside every
+   step, including ones nothing had executed. */
+.step-executed .step-status, .alert-action-tag.step-executed { color: #34d399; }
+.step-failed   .step-status, .alert-action-tag.step-failed   { color: #f87171; }
+.step-skipped  .step-status, .alert-action-tag.step-skipped  { color: var(--text-dim); }
+.step-status { font-family: var(--font-mono); font-size: 0.6rem; margin-left: 0.25rem; opacity: 0.8; }
+
+.soar-status-icon.status-contained    { color: #34d399; }
+.soar-status-icon.status-action_failed{ color: #f87171; }
+.soar-status-icon.status-open         { color: var(--text-dim); }
+
+.soar-time-tag.status-contained     { color: #34d399; }
+.soar-time-tag.status-action_failed { color: #f87171; }
+.soar-time-tag.status-open          { color: var(--text-dim); }
+
+/* ─── Model panel ─────────────────────────────────────────────────────────── */
+.model-block { padding: 0.6rem 0; border-bottom: 1px solid rgba(56,189,248,0.08); }
+.model-block:last-child { border-bottom: none; }
+.model-block-title {
+  font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.09em;
+  color: #38bdf8; font-weight: 700; margin-bottom: 0.35rem;
+}
+.metric-row {
+  display: flex; flex-wrap: wrap; gap: 0.9rem; margin: 0.35rem 0;
+  font-family: var(--font-mono); font-size: 0.76rem; color: var(--text-dim);
+}
+.metric-row strong { color: var(--text-primary, #e2e8f0); }
+
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
