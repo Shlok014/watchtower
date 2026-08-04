@@ -1,0 +1,33 @@
+{
+  "writes": {
+    "writers": 4,
+    "rows": 2000,
+    "repeats": 3,
+    "rows_per_second": 2829,
+    "rows_per_second_min": 2522,
+    "rows_per_second_max": 4079,
+    "errors": []
+  },
+  "pipeline": {
+    "benign_events": 400,
+    "benign_per_second": 2287,
+    "alerting_events": 60,
+    "alerting_per_second": 463
+  },
+  "stats_endpoint": {
+    "samples": 50,
+    "median_ms": 0.67,
+    "max_ms": 1.24,
+    "events_retained": 460
+  },
+  "ledger": {
+    "blocks": 460,
+    "bytes_per_block": 1015
+  },
+  "environment": {
+    "python": "3.14.1",
+    "platform": "Darwin arm64",
+    "sqlite": "3.50.4",
+    "measured_at": "2026-08-04T20:00:00Z"
+  }
+}

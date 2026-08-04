@@ -73,8 +73,13 @@ jobs:
       # prose today is a figure nobody re-copies when the benchmark is re-run.
       # Unifying the frozen split moved IsolationForest 0.0775 -> 0.0640 and
       # throughput 66,273 -> 103,181, in three documents each.
-      - name: Published figures match the run that produced them
+      - name: Published figures match the runs that produced them
         run: python scripts/check_published_numbers.py
+
+      # `make perf` is not run in CI. Throughput on a shared runner measures the
+      # runner, and a number that moves with someone else's build is not a
+      # measurement of this pipeline. docs/STORAGE.md records the machine it was
+      # taken on; the gate above only checks the prose has not drifted from it.
 
   frontend:
     runs-on: ubuntu-latest

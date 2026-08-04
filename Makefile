@@ -27,7 +27,7 @@ SOURCES ?= synthetic
 
 .DEFAULT_GOAL := help
 .PHONY: help setup dev backend frontend test test-backend test-frontend lint \
-        format bench feeds data verify demo clean clean-data
+        format bench perf feeds data verify demo clean clean-data
 
 help:  ## Show this help
 	@echo "Watchtower"
@@ -95,6 +95,12 @@ bench: $(PY)  ## Regenerate the measured results from a real run
 	@echo "Note which file it wrote: a run against the committed 2k sample writes"
 	@echo "docs/METRICS.sample.md and CANNOT touch docs/METRICS.md. Only the full"
 	@echo "dataset ('make data' first) regenerates the published page."
+
+perf: $(PY)  ## Re-measure the storage and pipeline figures
+	cd backend && ../$(PY) -m eval.storage
+	@echo
+	@echo "docs/STORAGE.md regenerated. The README links to it rather than"
+	@echo "carrying the numbers, so they cannot go stale in prose."
 
 verify: $(PY)  ## Recompute every ledger digest
 	$(PY) -m watchtower ledger verify
