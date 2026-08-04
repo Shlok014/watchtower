@@ -64,3 +64,14 @@ models/
 # Benchmark datasets — fetched by `python -m datasets.download`, never committed
 backend/data/datasets/
 backend/data/drain/
+# Trained models and the cached feature matrix — rebuilt by `python -m eval.benchmark`.
+# Full paths, not bare `models/`: a pattern with no slash matches at any depth,
+# but `data/processed/` has a mid-string slash and git anchors it to the
+# repository root, so it would not have matched backend/data/processed at all.
+backend/data/models/
+backend/data/processed/
+
+# Sample-dataset benchmark output. Kept out of the repo so a 2,200-block smoke
+# run can never be mistaken for the published 575,061-block result.
+docs/METRICS.sample.md
+docs/metrics.sample.json

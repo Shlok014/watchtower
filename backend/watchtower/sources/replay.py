@@ -29,6 +29,7 @@ import time
 from datetime import UTC, datetime
 
 from .. import config
+from ..detect import stream
 from .base import ThreadedSource
 
 # 081109 203615 148 INFO dfs.DataNode$PacketResponder: PacketResponder 1 for ...
@@ -251,6 +252,19 @@ class ReplaySource(ThreadedSource):
                     self.events_emitted += 1
                 except Exception as exc:
                     print(f"⚠️  replay:{self.dataset} pipeline error: {type(exc).__name__}: {exc}")
+
+                # Model scoring runs beside the pipeline, not inside it. The
+                # trained detector classifies HDFS *blocks*; the pipeline
+                # handles *events*. Folding a block-level probability into an
+                # event row would put a number in a column that does not mean
+                # what the column says.
+                if self.dataset == "hdfs":
+                    scorer = stream.get()
+                    if scorer is not None:
+                        try:
+                            scorer.observe(raw["message"])
+                        except Exception as exc:
+                            print(f"⚠️  block scoring error: {type(exc).__name__}: {exc}")
 
         print(
             f"✅ replay:{self.dataset} finished — {self.events_emitted} events from "

@@ -68,14 +68,21 @@ def test_health_reports_no_source_when_none_is_running(client):
     assert body["sources"] == []
 
 
-def test_retrain_refuses_rather_than_inventing_a_number(client):
+def test_retrain_returns_measured_numbers(client):
+    """It used to return an accuracy that rose ~1% per press and could never fall.
+
+    The detailed contract lives in test_model.py; this one guards the HTTP
+    surface — that the endpoint exists, reports a version, and carries none of
+    the fabricated fields it used to.
+    """
     r = client.post(_url("/retrain"))
-    assert r.status_code == 501
+    assert r.status_code == 200, r.get_json()
     body = r.get_json()
-    assert body["status"] == "not_implemented"
-    # The specific regression: it used to return a rising accuracy.
-    assert "accuracy" not in body
-    assert "improvement" not in body
+    assert body["status"] == "trained"
+    assert body["version"] >= 1
+    assert 0.0 <= body["metrics"]["f1"] <= 1.0
+    for gone in ("previous_accuracy", "new_accuracy", "improvement", "epochs"):
+        assert gone not in body
 
 
 def test_config_endpoint_reports_the_live_configuration(client):
