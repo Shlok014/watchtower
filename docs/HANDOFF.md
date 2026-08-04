@@ -50,7 +50,7 @@ It now has, and **it failed twice before it passed**:
    that worked (`test`, `lint`, `bench`) are exactly the three that had been run
    before. Fixed with one exported `PYTHONPATH`.
 
-**The gate now passes.** On a virgin clone: `make setup`, 136 + 43 tests, `make
+**The gate now passes.** On a virgin clone: `make setup`, 141 + 43 tests, `make
 lint` with all three gates, `make verify`, `make bench`, and `make dev` bringing
 up both services. 988 events flowed (911 from real HDFS replay, 77 synthetic),
 an attack blocked 5 addresses and really dropped 18 events, and 989 ledger blocks
@@ -91,6 +91,34 @@ the API never sent; `/stats` returned the synthetic generator's hostnames so the
 source filter matched nothing under a real source; the file tailer emitted half
 a line as a finished event; and a 200-event window was charted beside a lifetime
 stat card with nothing saying why.
+
+## And a second review, of those fixes
+
+Moving the response out of the ingest transaction weakened atomicity, so it got
+its own round. Three lenses, six claims, **four confirmed**.
+
+**The docstring I wrote was itself the bug.** It said a failed response "leaves
+an alert with status open and no SOAR record — a true statement about what
+happened". It was not. `block_ip` writes on an autocommit connection, so the
+block lands the moment it runs while the alert still reads "open" — leaving an
+address under active enforcement beside a status that means "nothing has run
+yet". Reproduced on a graceful Ctrl-C, and it survived a restart still dropping
+traffic. The execution row is now written before the first action can have an
+effect, and steps are recorded as they complete.
+
+**The partial-line fix from round one made a worse bug possible.**
+`copytruncate` plus a refill past the old offset let the buffer glue the head of
+one file's last line onto the tail of another's first — one well-formed,
+attributed, severity-classified record whose text never existed anywhere, with
+the severity coming from a word in the other file. Fragments now expire.
+
+Also: the SOAR health tile was reporting the alert-insert time (0.05 ms) for
+work measured at 1014 ms, and a replay that finished its file made health read
+"degraded" forever.
+
+And a flaky test, at a measured 0.54%: it drove `/simulate-attack`, whose
+brute_force burst draws randomly from a pool two thirds `failed_login` — which
+has no playbook and blocks nothing.
 
 ## The one thing left## The one thing left: screenshots and GIFs
 
@@ -234,7 +262,7 @@ IsolationForest moved from 0.0775 and throughput from 66,273 lines/sec when the
 split definition was unified across the project. Both figures are this run's real
 measurements; nothing was hand-edited.
 
-Tests: **136 backend + 43 frontend**.
+Tests: **141 backend + 43 frontend**.
 
 ---
 
