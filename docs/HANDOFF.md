@@ -11,7 +11,7 @@ follows exists because that rule forced it.
 ## The state in one line
 
 Sessions 0–11 are done and **merged to `main`**, which is green: 128 backend
-tests, 36 frontend tests, ruff, eslint, and both gates.
+tests, 43 frontend tests, ruff, eslint, and all four gates.
 
 **The repo stays private until the screenshots exist** — decided 2026-08-04.
 Publishing with a bare masthead was the alternative and was rejected; the images
@@ -45,7 +45,7 @@ It now has, and **it failed twice before it passed**:
    that worked (`test`, `lint`, `bench`) are exactly the three that had been run
    before. Fixed with one exported `PYTHONPATH`.
 
-**The gate now passes.** On a virgin clone: `make setup`, 128 + 36 tests, `make
+**The gate now passes.** On a virgin clone: `make setup`, 128 + 43 tests, `make
 lint` with all three gates, `make verify`, `make bench`, and `make dev` bringing
 up both services. 988 events flowed (911 from real HDFS replay, 77 synthetic),
 an attack blocked 5 addresses and really dropped 18 events, and 989 ledger blocks
@@ -166,7 +166,7 @@ from `origin/main`'s schema.
 The six-stage boot animation is gone. `LIVE` was a string literal; it is now
 LIVE/STALE/OFFLINE from the age of the last successful poll. The API client no
 longer swallows every error. Empty states distinguish "no data" from "no
-backend". `App.jsx` 662 lines → 16 components. **36 Vitest tests.**
+backend". `App.jsx` 662 lines → 16 components. **43 Vitest tests**, including App's own gate → dashboard → offline transitions.
 
 ### Session 10 — tooling and the gates
 `make help` is the interface. `scripts/dev.sh` replaces `start.sh`, whose
@@ -197,7 +197,7 @@ IsolationForest moved from 0.0775 and throughput from 66,273 lines/sec when the
 split definition was unified across the project. Both figures are this run's real
 measurements; nothing was hand-edited.
 
-Tests: **128 backend + 36 frontend**.
+Tests: **128 backend + 43 frontend**.
 
 ---
 

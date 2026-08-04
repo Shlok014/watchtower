@@ -20,8 +20,6 @@ import { SOARPanel } from './components/SOARPanel'
 import { StatCard } from './components/StatCard'
 import { Toast } from './components/Toast'
 
-async function noop() {}
-
 export default function App() {
   const [connected, setConnected] = useState(false)
   const [connectError, setConnectError] = useState(null)
@@ -103,7 +101,14 @@ export default function App() {
     setData({ stats, logs, alerts, soar, ledger, health, blocklist, model })
   }, [])
 
-  const { status, error, ageSeconds, refresh } = usePolling(connected ? fetchAll : noop, 2000)
+  // Polling does not start until the gate has opened. Before this the hook was
+  // handed a no-op that *resolved*, which counted as a successful poll — so the
+  // badge read LIVE on the strength of having done nothing, and for the first
+  // moments after connecting the dashboard showed a live badge above null data.
+  // Found by writing the test for exactly that transition.
+  const { status, error, ageSeconds, refresh } = usePolling(fetchAll, 2000, {
+    enabled: connected,
+  })
 
   // A backend that goes away entirely sends us back to the gate, rather than
   // leaving a dashboard of minutes-old numbers on screen. Derived, not set from
