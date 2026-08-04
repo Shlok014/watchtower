@@ -31,7 +31,7 @@ and a SHA-256 hash-chained audit ledger — Flask + React.**
 | **Audit ledger** | **Tamper-evident.** Every digest is recomputed from the live event row on verify, and the header digest covers height, timestamp, prev_hash and payload — so editing an event, rewriting a block, back-dating one, or deleting one is all detected and distinguished. | ✅ **real** |
 | Telemetry | Measured: per-stage p50/p95 via `perf_counter`, real RSS, real CPU, real 60s-window throughput, real uptime | ✅ real, measured |
 | **Persistence** | **SQLite in WAL mode.** One transaction per event covers the row, its alert, its SOAR record and its ledger block. Survives restart. Events retained 24h unless an alert cites them; the ledger is append-only and exempt. | ✅ **real** |
-| Dashboard | React + Chart.js, 2s polling, real connection gate | ✅ real |
+| **Dashboard** | React + Chart.js. **LIVE / STALE / OFFLINE derived from the age of the last successful poll**, stale panels dimmed and labelled, an offline banner, and empty states that distinguish "no data" from "no backend". 16 components, an API client that throws on `!res.ok`, 36 Vitest tests. | ✅ **real** |
 
 Detection is a **rule engine**, deliberately. Three sliding-window features and a
 weighted sum is what SIEM correlation rules actually are; the dishonest part was
@@ -331,6 +331,57 @@ min/median/max of recent scores, and how many lines matched no template at all �
 a rising unmatched rate being the honest signal that the miner has drifted. No
 accuracy is claimed for live scoring anywhere.
 
+## The dashboard, and what it refuses to imply
+
+The frontend was where the original demo lied most loudly, and the fixes are
+the same shape as the backend's.
+
+**The boot screen is gone.** It was a six-stage animation — "Initializing Kafka
+stream…", "Syncing blockchain ledger…" — that ticked each line to a green
+checkmark on a 400 ms timer without ever contacting the backend. It reported six
+subsystems healthy before a single request had been made, and played the
+identical sequence with the server switched off. What replaces it reflects
+exactly one thing: whether a real request to a real endpoint came back.
+
+**The header said `LIVE`. Always.** It now reads LIVE, STALE or OFFLINE, derived
+from the age of the last *successful* poll — including a separate one-second
+clock, so it degrades on its own while every request is failing rather than
+freezing on whatever it last rendered. Stale panels are dimmed and labelled;
+an offline banner says in words that what is on screen is the last data
+received, not the current state.
+
+**The API client used to swallow everything:**
+
+```js
+const fetchJSON = async (url, opts) => {
+  try { const r = await fetch(url, opts); return await r.json() } catch { return null }
+}
+```
+
+It never checked `res.ok`, so a 500 with a JSON body rendered as data; a 404's
+HTML body threw inside `.json()` and came back as `null`, which every caller
+read as "no data yet". Both failures looked exactly like a quiet system. The
+client now distinguishes *nothing answered* from *the backend said no*, carries
+the backend's own `detail` into the UI, and refuses a 200 that is not JSON.
+
+**Empty states say which thing is true.** "No logs ingested yet" and "No logs
+match these filters" were one message that also covered a dead backend.
+
+**Polling no longer churns.** The interval was torn down and recreated on every
+search keystroke, because `fetchAll` depended on `search`. Filters now live in a
+ref; the timer is created once, and a slow backend cannot queue polls behind
+itself.
+
+`App.jsx` went from 662 lines holding ten components to 16 components,
+`src/api/client.js` and `src/hooks/usePolling.js`. `VITE_API_URL` replaces the
+hardcoded localhost URL — the production bundle could previously only ever talk
+to the machine it was built on.
+
+No TypeScript, deliberately. A day of migration churn on an API-thin dashboard
+versus tests, error handling and honest states for the same day; a half-migrated
+`any`-riddled codebase is worse signal than clean JSX. JSDoc typedefs on the API
+client instead, and "TypeScript migration" stays on the roadmap unchecked.
+
 ## Storage
 
 State lives in `backend/data/watchtower.db` (SQLite, WAL). It replaced four
@@ -412,7 +463,8 @@ recomputes something — which is the whole point.
 ## Tests
 
 ```bash
-cd backend && .venv/bin/python -m pytest
+cd backend  && .venv/bin/python -m pytest    # 128
+cd frontend && npm test                      # 36
 ```
 
 128 tests covering the HTTP contract, the four ingestion sources (including a real
