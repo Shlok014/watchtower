@@ -20,6 +20,12 @@ known-first-party = ["watchtower", "eval", "datasets", "tests"]
 "tests/*" = ["B011"]
 
 [tool.pytest.ini_options]
+# The ONLY pytest config. There was also a `backend/pytest.ini`, and because
+# pytest takes the nearest config walking up from the invocation directory, it
+# won whenever tests were run from `backend/` — which is what CI does. Everything
+# below was silently inactive there, including the warning filters, and the two
+# configs disagreed about testpaths. Found by cloning the repo and reading what a
+# stranger actually gets.
 testpaths = ["backend/tests"]
 # So `pytest` works from anywhere, not only as `python -m pytest` from backend/
 # — the -m form silently adds the cwd to sys.path and the bare form does not,

@@ -67,6 +67,15 @@ jobs:
       - name: Detection regression floor
         run: python scripts/check_detection_floor.py
 
+      # docs/metrics.json is written by the benchmark; docs/METRICS.md is
+      # generated from it in the same call. The README and the handoff are
+      # hand-written, and that is the gap this closes — a figure copied into
+      # prose today is a figure nobody re-copies when the benchmark is re-run.
+      # Unifying the frozen split moved IsolationForest 0.0775 -> 0.0640 and
+      # throughput 66,273 -> 103,181, in three documents each.
+      - name: Published figures match the run that produced them
+        run: python scripts/check_published_numbers.py
+
   frontend:
     runs-on: ubuntu-latest
     defaults:

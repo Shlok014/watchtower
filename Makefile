@@ -11,6 +11,17 @@
 SHELL   := /bin/bash
 PY      := backend/.venv/bin/python
 PIP     := backend/.venv/bin/pip
+
+# The application package lives at backend/watchtower, but every recipe runs
+# from the repository root, so `python -m watchtower` could not import it:
+# `python -m` puts the *current directory* on sys.path, and that is the root.
+# Five targets — dev, backend, feeds, verify, demo — failed with "No module
+# named watchtower". Only test, lint and bench worked, because pytest gets its
+# path from pyproject.toml and bench cds into backend first.
+#
+# Exported once here rather than a `cd backend &&` in front of five recipes,
+# which is the version that goes wrong when the sixth is added.
+export PYTHONPATH := $(CURDIR)/backend
 PORT    ?= 5001
 SOURCES ?= synthetic
 
@@ -63,6 +74,7 @@ lint: $(PY) frontend/node_modules  ## Lint, format-check, and the honesty gate
 	$(PY) -m ruff check .
 	$(PY) -m ruff format --check .
 	$(PY) scripts/check_no_fabrication.py
+	$(PY) scripts/check_published_numbers.py
 	cd frontend && npm run lint
 
 format: $(PY)  ## Apply formatting
@@ -76,10 +88,13 @@ feeds: $(PY)  ## Refresh the cached threat-intelligence feeds
 data: $(PY)  ## Download the full HDFS_v1 benchmark (~1.5 GB extracted)
 	cd backend && ../$(PY) -m datasets.download --hdfs
 
-bench: $(PY)  ## Regenerate docs/METRICS.md from a real run
+bench: $(PY)  ## Regenerate the measured results from a real run
 	cd backend && ../$(PY) -m eval.benchmark
 	@echo
-	@echo "docs/METRICS.md regenerated. Every number in the README comes from here."
+	@echo "Every number in the README comes from that run — none is typed by hand."
+	@echo "Note which file it wrote: a run against the committed 2k sample writes"
+	@echo "docs/METRICS.sample.md and CANNOT touch docs/METRICS.md. Only the full"
+	@echo "dataset ('make data' first) regenerates the published page."
 
 verify: $(PY)  ## Recompute every ledger digest
 	$(PY) -m watchtower ledger verify

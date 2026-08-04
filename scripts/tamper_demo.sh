@@ -7,6 +7,9 @@
 set -uo pipefail
 cd "$(dirname "$0")/.."
 PY="backend/.venv/bin/python"
+# backend/ on the import path: the package is at backend/watchtower, and
+# `python -m` only adds the current directory, which is the repository root.
+export PYTHONPATH="$(pwd)/backend${PYTHONPATH:+:$PYTHONPATH}"
 
 echo "── 1. verify the chain as it stands ──────────────────────────────────────"
 "$PY" -m watchtower ledger verify || true

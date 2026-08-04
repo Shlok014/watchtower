@@ -31,6 +31,12 @@ drain3==0.9.11
 # not the place to accept that.
 PyYAML==6.0.3
 
+# These five used to live in a separate `requirements-ml.txt` headed "Detection
+# benchmarks only — not needed to run the dashboard". That stopped being true
+# when the app began loading a trained model at startup, and a file whose first
+# line is a claim that is no longer true is worse than no file. Merged here and
+# the split deleted.
+#
 # Deliberately absent: pandas (csv and Counter are enough here, and it is 60 MB
 # of dependency for two loops), and any deep-learning framework. Both are
 # roadmap lines, not dependencies.
