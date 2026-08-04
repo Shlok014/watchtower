@@ -63,6 +63,7 @@ lint: $(PY) frontend/node_modules  ## Lint, format-check, and the honesty gate
 	$(PY) -m ruff check .
 	$(PY) -m ruff format --check .
 	$(PY) scripts/check_no_fabrication.py
+	$(PY) scripts/check_published_numbers.py
 	cd frontend && npm run lint
 
 format: $(PY)  ## Apply formatting
