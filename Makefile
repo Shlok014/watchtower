@@ -88,10 +88,13 @@ feeds: $(PY)  ## Refresh the cached threat-intelligence feeds
 data: $(PY)  ## Download the full HDFS_v1 benchmark (~1.5 GB extracted)
 	cd backend && ../$(PY) -m datasets.download --hdfs
 
-bench: $(PY)  ## Regenerate docs/METRICS.md from a real run
+bench: $(PY)  ## Regenerate the measured results from a real run
 	cd backend && ../$(PY) -m eval.benchmark
 	@echo
-	@echo "docs/METRICS.md regenerated. Every number in the README comes from here."
+	@echo "Every number in the README comes from that run — none is typed by hand."
+	@echo "Note which file it wrote: a run against the committed 2k sample writes"
+	@echo "docs/METRICS.sample.md and CANNOT touch docs/METRICS.md. Only the full"
+	@echo "dataset ('make data' first) regenerates the published page."
 
 verify: $(PY)  ## Recompute every ledger digest
 	$(PY) -m watchtower ledger verify
