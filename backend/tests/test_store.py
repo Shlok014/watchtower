@@ -9,7 +9,8 @@ import sqlite3
 import threading
 
 import pytest
-from store import db, repos
+
+from watchtower.store import db, repos
 
 
 @pytest.fixture()
@@ -242,7 +243,7 @@ def test_pragmas(store_db):
 
 def test_retention_note_describes_the_real_backend(store_db):
     note = repos.retention_note()
-    assert "SQLite" in note and str(repos.RETENTION_HOURS) in note
+    assert "SQLite" in note and str(repos.retention_hours()) in note
     # The string it replaced described in-memory ring buffers and would have
     # survived this change unnoticed.
     assert "ring buffer" not in note.lower()

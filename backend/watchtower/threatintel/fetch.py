@@ -1,7 +1,7 @@
 """Feed downloader.
 
-    python -m threatintel.fetch            # refresh both feeds
-    python -m threatintel.fetch --status   # report cache state, fetch nothing
+    python -m watchtower.threatintel.fetch            # refresh both feeds
+    python -m watchtower.threatintel.fetch --status   # report cache state, fetch nothing
 
 Order of operations matters and is deliberate: download -> parse-validate ->
 atomic write -> manifest update. A response that fails validation never touches
@@ -99,7 +99,8 @@ def fetch_feed(spec: FeedSpec, cache_dir: Path, prev: dict | None, timeout: floa
     return "updated", f"{entries} entries", entry
 
 
-def fetch_all(cache_dir: Path = store.CACHE_DIR) -> int:
+def fetch_all(cache_dir: Path | None = None) -> int:
+    cache_dir = store.default_cache_dir() if cache_dir is None else cache_dir
     cache_dir.mkdir(parents=True, exist_ok=True)
     manifest = store.load_manifest(cache_dir)
     failures = 0
@@ -118,7 +119,8 @@ def fetch_all(cache_dir: Path = store.CACHE_DIR) -> int:
     return failures
 
 
-def print_status(cache_dir: Path = store.CACHE_DIR) -> int:
+def print_status(cache_dir: Path | None = None) -> int:
+    cache_dir = store.default_cache_dir() if cache_dir is None else cache_dir
     from .index import MISSING, ReputationIndex
 
     idx = ReputationIndex.load(cache_dir)

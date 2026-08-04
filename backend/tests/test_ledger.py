@@ -5,9 +5,10 @@ anything routed through the app would re-chain the block and there would be
 nothing to detect.
 """
 
-import ledger
 import pytest
-from store import db, repos
+
+from watchtower import ledger
+from watchtower.store import db, repos
 
 
 @pytest.fixture()

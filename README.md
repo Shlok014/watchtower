@@ -41,8 +41,8 @@ looked like a model.
 ## Threat intelligence
 
 ```bash
-python -m threatintel.fetch            # refresh the feed cache
-python -m threatintel.fetch --status   # report freshness, fetch nothing
+python -m watchtower.threatintel.fetch            # refresh the feed cache
+python -m watchtower.threatintel.fetch --status   # report freshness, fetch nothing
 ```
 
 Feeds are cached under `backend/data/feeds/` (git-ignored — the data is dated,
@@ -143,7 +143,7 @@ Measured on this machine (Python 3.14, macOS/arm64):
 | | |
 |---|---|
 | Sustained writes | ~1,800 events/sec, 4 writer threads + a concurrent reader, zero `database is locked` |
-| `/api/stats` | **1.6 ms**, down from 13.0 ms — the old version re-parsed every timestamp once per time bucket, ~75,000 `fromisoformat` calls per request, every 2 seconds |
+| `/api/v1/stats` | **1.6 ms**, down from 13.0 ms — the old version re-parsed every timestamp once per time bucket, ~75,000 `fromisoformat` calls per request, every 2 seconds |
 | Ledger growth | 838 bytes/block → **~48 MB/day** at the generator's ~0.7 ev/s, ~1.7 GB/day at a 25 ev/s replay |
 
 That last row is a real constraint, not a footnote: the ledger is append-only
@@ -179,15 +179,15 @@ Try it:
 
 ```bash
 cd backend
-.venv/bin/python -m cli ledger verify
+.venv/bin/python -m watchtower ledger verify
 # ✅ Chain verified — 26 blocks, every digest recomputed from the live event rows
 
-.venv/bin/python -m cli ledger tamper --event-id 7 --field message --value "nothing happened here"
+.venv/bin/python -m watchtower ledger tamper --event-id 7 --field message --value "nothing happened here"
 #   event 7.message
 #     before: '[SYSLOG] admin accessed /etc/shadow from 192.168.1.30'
 #     after:  'nothing happened here'
 
-.venv/bin/python -m cli ledger verify
+.venv/bin/python -m watchtower ledger verify
 # ❌ TAMPER DETECTED — 1 finding(s) across 26 blocks.
 #   height 7 (block 7): payload_mismatch
 #     event 7 was modified after it was recorded (stored 3e43b48f0e26…, recomputed 3218805befed…)
@@ -215,7 +215,7 @@ recomputes something — which is the whole point.
 cd backend && .venv/bin/python -m pytest
 ```
 
-31 tests covering provenance constraints, concurrent writers against a live
+41 tests covering the HTTP contract, provenance constraints, concurrent writers against a live
 reader, retention (including that an alert-referenced event is never pruned and
 that lifetime counters do not fall when it runs), transaction rollback leaving a
 usable connection, restart durability, and every ledger tamper mode — event
@@ -228,13 +228,62 @@ forever).
 ```bash
 cd backend
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
-.venv/bin/python -m threatintel.fetch     # optional; app runs without it
-.venv/bin/python app.py                   # :5001
+.venv/bin/python -m watchtower.threatintel.fetch   # optional; app runs without it
+.venv/bin/python -m watchtower run                 # :5001
 
 cd ../frontend && npm install && npm run dev   # :5173
 ```
 
 A one-command `make dev` replaces this shortly.
+
+## Layout
+
+```
+backend/
+  watchtower/          the application package
+    config.py          every WATCHTOWER_* setting, resolved once
+    app.py             create_app() factory
+    api/routes.py      the HTTP surface, at /api/v1
+    pipeline/          normalize.py, consumer.py — one path for every source
+    detect/            rules.py (live), parser.py + features.py (benchmark)
+    sources/           base.py, synthetic.py
+    soar/engine.py     playbook selection
+    ledger/chain.py    the tamper-evident audit chain
+    store/             db.py, repos.py, schema.sql
+    telemetry/         measured, never invented
+    threatintel/       cached public feeds + provenance
+  eval/                benchmarks; writes docs/METRICS.md
+  datasets/            loghub download
+  tests/
+```
+
+The API is versioned at `/api/v1` and there is no unversioned alias. Two of
+these responses have already changed meaning during the rebuild — `links_ok` on
+the chain check, `playbook_steps` on SOAR — and a client pinned to `/api` can
+only discover that by rendering an empty cell, since every field the dashboard
+reads is optional-chained.
+
+## Configuration
+
+Everything is an environment variable with a working default, so the app runs
+with none of them set. `python -m watchtower config` prints what a process
+resolved, and `GET /api/v1/config` reports it from a running one.
+
+| Variable | Default | |
+|---|---|---|
+| `WATCHTOWER_DATA_DIR` | `backend/data` | database, feed cache, drain state |
+| `WATCHTOWER_DB` | `<data>/watchtower.db` | |
+| `WATCHTOWER_RETENTION_HOURS` | `24` | events only; the ledger is exempt |
+| `WATCHTOWER_ALERT_THRESHOLD` | `0.45` | changing it changes `ruleset_version` |
+| `WATCHTOWER_SOURCES` | `synthetic` | comma-separated |
+| `WATCHTOWER_CORS_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173` | |
+| `WATCHTOWER_HOST` / `WATCHTOWER_PORT` | `127.0.0.1` / `5001` | |
+
+Two of those defaults are deliberate changes from what the demo shipped with.
+CORS was `CORS(app)` — any origin — on an unauthenticated API that includes a
+destructive `POST /reset`, so any page open in the browser could have emptied
+the store. And the server bound `0.0.0.0`, publishing that same API to every
+machine on the network the moment the demo ran on café wifi.
 
 ## License
 

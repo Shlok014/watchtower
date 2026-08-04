@@ -8,7 +8,7 @@ import { Line, Doughnut, Bar } from 'react-chartjs-2'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarElement, ArcElement, Tooltip, Legend, Filler)
 
-const API = 'http://localhost:5001/api'
+const API = 'http://localhost:5001/api/v1'
 
 const fetchJSON = async (url, opts) => {
   try { const r = await fetch(url, opts); return await r.json() } catch { return null }
@@ -35,7 +35,7 @@ function ConnectionGate({ error, onRetry }) {
             </div>
             <div className="loading-stage">
               <span className="loading-stage-icon">↳</span>
-              <span>Expected at {API} — start it with <code>python app.py</code></span>
+              <span>Expected at {API} — start it with <code>python -m watchtower run</code></span>
             </div>
           </div>
           <button className="btn btn-validate" onClick={onRetry}>Retry</button>

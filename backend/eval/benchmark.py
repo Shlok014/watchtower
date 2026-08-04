@@ -30,13 +30,15 @@ from pathlib import Path
 
 import numpy as np
 import sklearn
-from detection.features import build_matrix
-from detection.parser import LogParser
 from sklearn.ensemble import IsolationForest
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import confusion_matrix, precision_recall_fscore_support, roc_auc_score
 from sklearn.model_selection import train_test_split
 from sklearn.tree import DecisionTreeClassifier
+
+from watchtower import config
+from watchtower.detect.features import build_matrix
+from watchtower.detect.parser import LogParser
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 OUT_MD = ROOT / "docs" / "METRICS.md"
@@ -238,7 +240,7 @@ def main(argv=None) -> int:
         with contextlib.suppress(FileNotFoundError):
             parsing_rows.append(evaluate(name))
 
-    hdfs = Path(__file__).resolve().parent.parent / "data" / "datasets" / "HDFS.log"
+    hdfs = config.get().datasets_dir / "HDFS.log"
     if not hdfs.exists():
         print("HDFS.log not present — run: python -m datasets.download --hdfs", file=sys.stderr)
         print("Writing the parsing-only section.", file=sys.stderr)

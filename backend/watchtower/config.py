@@ -1,0 +1,135 @@
+"""Every tunable in one place, read from the environment exactly once.
+
+Before this module the settings were scattered as module constants across
+``app.py``, ``store/db.py``, ``store/repos.py``, ``threatintel/store.py`` and
+``detection/parser.py``, each deriving its own paths from ``__file__``. Two
+consequences, both real: moving a file changed where the database lived, and
+there was no single place to look up what the process would do before starting
+it.
+
+Paths are anchored to ``BASE_DIR`` — the ``backend/`` directory — rather than to
+each module's own location, so the package can be rearranged without moving the
+data that a running install has already written.
+"""
+
+import dataclasses
+import os
+from dataclasses import dataclass, field
+from pathlib import Path
+
+# backend/, the parent of this package. Everything on disk hangs off it.
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+
+def _env_int(name: str, default: int) -> int:
+    raw = os.environ.get(name)
+    if not raw:
+        return default
+    try:
+        return int(raw)
+    except ValueError as exc:
+        raise ValueError(f"{name} must be an integer, got {raw!r}") from exc
+
+
+def _env_float(name: str, default: float) -> float:
+    raw = os.environ.get(name)
+    if not raw:
+        return default
+    try:
+        return float(raw)
+    except ValueError as exc:
+        raise ValueError(f"{name} must be a number, got {raw!r}") from exc
+
+
+def _env_list(name: str, default: tuple[str, ...]) -> tuple[str, ...]:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return tuple(part.strip() for part in raw.split(",") if part.strip())
+
+
+@dataclass(frozen=True)
+class Config:
+    """Resolved configuration. Frozen: nothing rebinds these at runtime."""
+
+    data_dir: Path
+    db_path: Path
+    retention_hours: int
+    cors_origins: tuple[str, ...]
+    host: str
+    port: int
+    alert_threshold: float
+    sources: tuple[str, ...]
+
+    # Derived directories. Declared here so no other module has to know the
+    # layout of data/.
+    feeds_dir: Path = field(init=False)
+    datasets_dir: Path = field(init=False)
+    drain_dir: Path = field(init=False)
+    models_dir: Path = field(init=False)
+    incidents_dir: Path = field(init=False)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "feeds_dir", self.data_dir / "feeds")
+        object.__setattr__(self, "datasets_dir", self.data_dir / "datasets")
+        object.__setattr__(self, "drain_dir", self.data_dir / "drain")
+        object.__setattr__(self, "models_dir", self.data_dir / "models")
+        object.__setattr__(self, "incidents_dir", self.data_dir / "incidents")
+
+
+def from_env() -> Config:
+    data_dir = Path(os.environ.get("WATCHTOWER_DATA_DIR") or (BASE_DIR / "data"))
+    db_path = Path(os.environ.get("WATCHTOWER_DB") or (data_dir / "watchtower.db"))
+    return Config(
+        data_dir=data_dir,
+        db_path=db_path,
+        retention_hours=_env_int("WATCHTOWER_RETENTION_HOURS", 24),
+        # Wide-open CORS was the default before this. On a dashboard that will
+        # happily POST /api/v1/reset, any page in the browser could have wiped
+        # the store. The dev server's two spellings of localhost are both here
+        # because Vite prints one and browsers sometimes resolve the other.
+        cors_origins=_env_list(
+            "WATCHTOWER_CORS_ORIGINS",
+            ("http://localhost:5173", "http://127.0.0.1:5173"),
+        ),
+        # Loopback by default. The previous host was 0.0.0.0, which published an
+        # unauthenticated API with a destructive endpoint to every machine on
+        # the network the moment the demo was run on café wifi.
+        host=os.environ.get("WATCHTOWER_HOST", "127.0.0.1"),
+        port=_env_int("WATCHTOWER_PORT", 5001),
+        alert_threshold=_env_float("WATCHTOWER_ALERT_THRESHOLD", 0.45),
+        sources=_env_list("WATCHTOWER_SOURCES", ("synthetic",)),
+    )
+
+
+_config: Config | None = None
+
+
+def get() -> Config:
+    """The process-wide configuration, resolved on first use."""
+    global _config
+    if _config is None:
+        _config = from_env()
+    return _config
+
+
+def set_config(cfg: Config) -> None:
+    """Override the configuration. For tests and the CLI's --db flag."""
+    global _config
+    _config = cfg
+
+
+def replace(**changes) -> Config:
+    """Set a modified copy of the current config, and return it.
+
+    ``data_dir`` drags ``db_path`` with it unless the caller pins both. Without
+    that, a test that redirects data_dir at a tmpdir would still write its
+    database into the developer's real ``backend/data`` — and pass, while
+    corrupting the store it was supposed to leave alone.
+    """
+    cur = get()
+    if "data_dir" in changes and "db_path" not in changes:
+        changes["db_path"] = Path(changes["data_dir"]) / "watchtower.db"
+    cfg = dataclasses.replace(cur, **changes)
+    set_config(cfg)
+    return cfg

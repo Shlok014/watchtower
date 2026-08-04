@@ -7,7 +7,7 @@ block inside a bare ``except Exception: pass``.
 
 from . import db, repos
 from .db import close_all, configure, connect, write
-from .repos import RETENTION_HOURS, retention_note
+from .repos import retention_hours, retention_note
 
 __all__ = [
     "db",
@@ -17,5 +17,5 @@ __all__ = [
     "write",
     "close_all",
     "retention_note",
-    "RETENTION_HOURS",
+    "retention_hours",
 ]

@@ -1,8 +1,10 @@
 """Watchtower command line.
 
-    python -m cli ledger verify
-    python -m cli ledger tamper --event-id 42 --field message --value "nothing happened"
-    python -m cli ledger show --limit 5
+    python -m watchtower run
+    python -m watchtower config
+    python -m watchtower ledger verify
+    python -m watchtower ledger tamper --event-id 42 --field message --value "nothing happened"
+    python -m watchtower ledger show --limit 5
 
 The tamper command exists to prove the ledger actually detects tampering. It
 performs a raw SQL UPDATE that bypasses the application entirely — which is the
@@ -13,12 +15,47 @@ app would re-chain the block and detect nothing.
 import argparse
 import sys
 
-import ledger
-import store
+from . import config, ledger
+from .store import db, repos
 
 
+# ─── run ──────────────────────────────────────────────────────────────────────
+def _run(args) -> int:
+    from .app import create_app, startup_banner
+
+    if args.sources is not None:
+        config.replace(sources=tuple(s.strip() for s in args.sources.split(",") if s.strip()))
+    if args.port is not None:
+        config.replace(port=args.port)
+    if args.host is not None:
+        config.replace(host=args.host)
+
+    cfg = config.get()
+    try:
+        app = create_app()
+    except Exception as exc:
+        print(f"❌ {type(exc).__name__}: {exc}", file=sys.stderr)
+        return 2
+    print(startup_banner())
+    app.run(debug=False, host=cfg.host, port=cfg.port)
+    return 0
+
+
+def _config(args) -> int:
+    cfg = config.get()
+    print(f"  data_dir         {cfg.data_dir}")
+    print(f"  db_path          {cfg.db_path}")
+    print(f"  retention_hours  {cfg.retention_hours}")
+    print(f"  alert_threshold  {cfg.alert_threshold}")
+    print(f"  sources          {', '.join(cfg.sources) or '(none)'}")
+    print(f"  cors_origins     {', '.join(cfg.cors_origins) or '(none)'}")
+    print(f"  bind             {cfg.host}:{cfg.port}")
+    return 0
+
+
+# ─── ledger ───────────────────────────────────────────────────────────────────
 def _verify(args) -> int:
-    conn = store.db.connect()
+    conn = db.connect()
     result = ledger.verify(conn)
     n = result.blocks_checked
     if n == 0:
@@ -43,7 +80,7 @@ def _verify(args) -> int:
 
 
 def _tamper(args) -> int:
-    conn = store.db.connect()
+    conn = db.connect()
     row = conn.execute(
         f"SELECT id, {args.field} FROM events WHERE id = ?", (args.event_id,)
     ).fetchone()
@@ -57,14 +94,14 @@ def _tamper(args) -> int:
     print(f"  event {args.event_id}.{args.field}")
     print(f"    before: {old!r}")
     print(f"    after:  {args.value!r}")
-    with store.write() as w:
+    with db.write() as w:
         w.execute(f"UPDATE events SET {args.field} = ? WHERE id = ?", (args.value, args.event_id))
-    print("\nDone. Now run:  python -m cli ledger verify")
+    print("\nDone. Now run:  python -m watchtower ledger verify")
     return 0
 
 
 def _show(args) -> int:
-    rows = store.repos.recent_blocks(args.limit)
+    rows = repos.recent_blocks(args.limit)
     if not rows:
         print("Ledger is empty.")
         return 0
@@ -77,16 +114,26 @@ def _show(args) -> int:
     return 0
 
 
-def main(argv=None) -> int:
+def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(prog="watchtower", description="Watchtower CLI")
     ap.add_argument("--db", help="path to the database file")
     sub = ap.add_subparsers(dest="group", required=True)
+
+    run = sub.add_parser("run", help="start the API and the configured sources")
+    run.add_argument("--sources", help="comma-separated source list, e.g. synthetic,syslog")
+    run.add_argument("--port", type=int)
+    run.add_argument("--host")
+    run.set_defaults(_fn=_run)
+
+    sub.add_parser("config", help="print the resolved configuration").set_defaults(_fn=_config)
 
     led = sub.add_parser("ledger", help="audit ledger operations").add_subparsers(
         dest="cmd", required=True
     )
 
-    led.add_parser("verify", help="recompute every digest and report any tampering")
+    led.add_parser("verify", help="recompute every digest and report any tampering").set_defaults(
+        _fn=_verify
+    )
 
     t = led.add_parser("tamper", help="deliberately corrupt one event, to demonstrate detection")
     t.add_argument("--event-id", type=int, required=True)
@@ -97,15 +144,20 @@ def main(argv=None) -> int:
         help="which column to modify",
     )
     t.add_argument("--value", required=True)
+    t.set_defaults(_fn=_tamper)
 
     sh = led.add_parser("show", help="list recent blocks")
     sh.add_argument("--limit", type=int, default=10)
+    sh.set_defaults(_fn=_show)
 
-    args = ap.parse_args(argv)
+    return ap
+
+
+def main(argv=None) -> int:
+    args = build_parser().parse_args(argv)
     if args.db:
-        store.db.configure(args.db)
-
-    return {"verify": _verify, "tamper": _tamper, "show": _show}[args.cmd](args)
+        db.configure(args.db)
+    return args._fn(args)
 
 
 if __name__ == "__main__":

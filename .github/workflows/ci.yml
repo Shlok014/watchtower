@@ -41,26 +41,15 @@ jobs:
         working-directory: backend
         run: python -m pytest -q
 
+      # The gate that protects the premise: no invented numbers, and no
+      # re-adoption of the names the project retired. It lives in a script
+      # rather than inline shell because the inline version it replaces was
+      # wrong twice — `grep -rn .` emits ./-prefixed paths under GNU grep and
+      # bare paths under BSD grep, breaking its own allowlist; and a plain
+      # substring search flagged the six lines of prose that *explain* what was
+      # removed. See the script's docstring.
       - name: No fabricated values may return
-        working-directory: backend
-        run: |
-          # The project's whole premise is that it does not invent numbers.
-          # randomness is legitimate in exactly one place — the synthetic log
-          # generator, which produces input data and labels it origin=synthetic.
-          # Anywhere else it would be faking a measurement of the system itself.
-          if grep -rn --include="*.py" "random\." . \
-               | grep -v "^./app.py" \
-               | grep -v "^./tests/" \
-               | grep -v "threatintel/pool.py"; then
-            echo "::error::random.* found outside the synthetic generator"
-            exit 1
-          fi
-          # Names the project has committed to not using.
-          if grep -rniE "hyperledger|LogLM|IRIS-SOC" --include="*.py" --include="*.jsx" \
-               --include="*.md" . ../frontend/src ../README.md; then
-            echo "::error::a retired overclaiming name has come back"
-            exit 1
-          fi
+        run: python scripts/check_no_fabrication.py
 
   frontend:
     runs-on: ubuntu-latest
