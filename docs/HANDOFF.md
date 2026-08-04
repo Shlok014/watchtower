@@ -45,7 +45,7 @@ It now has, and **it failed twice before it passed**:
    that worked (`test`, `lint`, `bench`) are exactly the three that had been run
    before. Fixed with one exported `PYTHONPATH`.
 
-**The gate now passes.** On a virgin clone: `make setup`, 128 + 43 tests, `make
+**The gate now passes.** On a virgin clone: `make setup`, 136 + 43 tests, `make
 lint` with all three gates, `make verify`, `make bench`, and `make dev` bringing
 up both services. 988 events flowed (911 from real HDFS replay, 77 synthetic),
 an attack blocked 5 addresses and really dropped 18 events, and 989 ledger blocks
@@ -197,7 +197,7 @@ IsolationForest moved from 0.0775 and throughput from 66,273 lines/sec when the
 split definition was unified across the project. Both figures are this run's real
 measurements; nothing was hand-edited.
 
-Tests: **128 backend + 43 frontend**.
+Tests: **136 backend + 43 frontend**.
 
 ---
 

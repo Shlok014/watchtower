@@ -147,10 +147,24 @@ class FileTailSource(ThreadedSource):
             raise FileNotFoundError(f"cannot tail {self.path}: no such file")
 
         fh, ident = self._open()
+        # Partial reads are held here until their newline arrives. `readline()`
+        # at the end of a file returns whatever bytes exist, newline or not — so
+        # catching a writer mid-line split one log line into two events, the
+        # first with whatever address happened to be in the first half and a
+        # severity classified from half a message, the second unparseable and
+        # attributed to loopback. Both were then chained into the ledger as
+        # facts.
+        pending = ""
         try:
             while not self.stopping:
-                line = fh.readline()
-                if line:
+                chunk = fh.readline()
+                if chunk:
+                    pending += chunk
+                    if not pending.endswith("\n"):
+                        # Mid-line. Wait for the rest rather than inventing an
+                        # event out of half of one.
+                        continue
+                    line, pending = pending, ""
                     self.lines_read += 1
                     raw = parse_line(line, self.path)
                     if raw is not None:
@@ -172,6 +186,13 @@ class FileTailSource(ThreadedSource):
                     fh = open(self.path, encoding="utf-8", errors="replace")  # noqa: SIM115
                     st = os.fstat(fh.fileno())
                     ident = (st.st_dev, st.st_ino)
+                    # A half-line from the old file can never be completed.
+                    if pending:
+                        print(
+                            f"⚠️  {self.path}: discarding {len(pending)} bytes of an "
+                            "incomplete line left by the rotation"
+                        )
+                        pending = ""
                     print(f"🔄 {self.path} rotated — reopened")
                     continue
 

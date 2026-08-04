@@ -13,6 +13,7 @@ from flask_cors import CORS
 from . import config, runtime, threatintel
 from .api.routes import bp as api_bp
 from .detect import stream
+from .soar import playbooks
 from .sources import synthetic
 from .store import db as store_db
 
@@ -48,6 +49,13 @@ def create_app(cfg: config.Config | None = None, start_sources: bool = True) -> 
         return jsonify({"error": "internal_error"}), 500
 
     store_db.connect()  # creates/validates the schema once
+
+    # Load and validate the response playbooks NOW, so a typo in a YAML file is
+    # a refusal to start rather than a surprise at 3am. Before this the first
+    # alerting event discovered the problem, from inside the ingest
+    # transaction, and took the event down with it.
+    playbooks.all_playbooks(reload=True)
+
     synthetic.refresh_ip_pools()
     # Load the newest trained model if there is one. Absence is normal on a
     # clean clone and is reported through /api/v1/model rather than logged and

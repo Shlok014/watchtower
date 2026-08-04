@@ -7,7 +7,7 @@ really enforce → a tamper-evident audit ledger. Flask + React + scikit-learn.
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776ab.svg)](backend/requirements.txt)
 [![Node 20+](https://img.shields.io/badge/node-20%2B-5fa04e.svg)](frontend/package.json)
-[![Tests](https://img.shields.io/badge/tests-128%20backend%20%2B%2043%20frontend-34d399.svg)](#tests)
+[![Tests](https://img.shields.io/badge/tests-136%20backend%20%2B%2043%20frontend-34d399.svg)](#tests)
 
 <!-- No CI badge. GitHub Actions has been refused for billing since the
      workflow landed, so no run has ever gone green. The whole backend job was
@@ -539,11 +539,11 @@ recomputes something — which is the whole point.
 ## Tests
 
 ```bash
-cd backend  && .venv/bin/python -m pytest    # 128
+cd backend  && .venv/bin/python -m pytest    # 136
 cd frontend && npm test                      # 43
 ```
 
-128 tests covering the HTTP contract, the four ingestion sources (including a real
+136 tests covering the HTTP contract, the four ingestion sources (including a real
 UDP datagram end to end, and a tailer surviving both rotation and in-place
 truncation), the SOAR closed loop (blocked address → zero further alerts, N real
 drops), playbook validation, a webhook against a real HTTP server and a closed
@@ -567,7 +567,7 @@ make dev       # API on :5001, dashboard on :5173
 
 | | |
 |---|---|
-| `make test` | 128 backend + 43 frontend |
+| `make test` | 136 backend + 43 frontend |
 | `make lint` | ruff, eslint, and the honesty gate |
 | `make bench` | regenerate `docs/METRICS.md` from a real run |
 | `make demo` | verify the ledger, corrupt one event with raw SQL, verify again |

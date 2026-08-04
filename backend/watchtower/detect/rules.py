@@ -100,6 +100,12 @@ def detect(conn, log_entry: dict, ingested_ts_ms: int) -> dict:
     request_frequency = repos.events_in_window(conn, ip, ingested_ts_ms - FREQUENCY_WINDOW_S * 1000)
 
     features = {
+        # The threshold that applied to THIS alert, stored with it. The
+        # dashboard printed a hardcoded 0.45 beside every score because the API
+        # never sent one — so it would have gone on saying 0.45 after anyone set
+        # WATCHTOWER_ALERT_THRESHOLD, and historical alerts would be shown
+        # against today's threshold rather than the one they were judged by.
+        "threshold": thr,
         "failed_attempts_count": failed_attempts,
         "ip_reputation": ip_reputation,
         "ip_reputation_score": round(ip_rep_score, 2),

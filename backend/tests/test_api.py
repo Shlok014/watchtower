@@ -110,3 +110,61 @@ def test_simulate_attack_then_reset_reports_real_counts(client):
     # regardless of what was actually removed.
     assert body["deleted"]["events"] == after["logs_retained"]
     assert client.get(_url("/stats")).get_json()["logs_retained"] == 0
+
+
+def test_stats_lists_the_sources_actually_seen(client):
+    """The filter dropdown is built from this.
+
+    It used to return the synthetic generator's seven hardcoded hostnames, so
+    running any real source made every option in the dashboard's source filter
+    match nothing, while the sources genuinely in the table were absent from it.
+    """
+    from datetime import UTC, datetime
+
+    from watchtower.pipeline.consumer import process_log
+
+    process_log(
+        {
+            "timestamp": datetime.now(UTC).isoformat(),
+            "source": "dfs.DataNode",
+            "event": "log_info",
+            "ip": "10.0.0.1",
+            "user": "unknown",
+            "message": "replayed",
+            "log_format": "hdfs",
+            "origin": "replay:hdfs",
+        }
+    )
+    body = client.get(_url("/stats")).get_json()
+    assert body["sources"] == ["dfs.DataNode"]
+    # The generator's profile list is still available, under a name that says
+    # what it is.
+    assert "linux-server" in body["synthetic_source_profiles"]
+
+
+def test_alerts_carry_the_threshold_they_were_judged_against(client):
+    """The dashboard printed a hardcoded 0.45 because the API never sent one."""
+    client.post(_url("/simulate-attack"), json={"attack_type": "brute_force"})
+    alerts = client.get(_url("/alerts")).get_json()
+    assert alerts, "the attack raised no alert"
+    assert alerts[0]["features"]["threshold"] == 0.45
+
+
+def test_the_distribution_window_is_published_not_implied(client):
+    """The chart is a recent window; the stat card beside it is a lifetime total."""
+    body = client.get(_url("/stats")).get_json()
+    assert body["distribution_window"] == 200
+
+
+def test_health_is_degraded_when_a_configured_source_is_not_running(client):
+    """`any(alive)` used to make one dead source among several read as healthy."""
+    from watchtower import config, runtime
+
+    config.replace(sources=("synthetic", "syslog:5514"))
+    try:
+        body = client.get(_url("/system-health")).get_json()
+        assert body["summary"]["state"] != "ok"
+        assert "syslog:5514" in body["sources_not_running"]
+    finally:
+        runtime.stop_all()
+        config.replace(sources=("synthetic",))

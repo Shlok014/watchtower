@@ -9,7 +9,7 @@ hardcoded "All Systems Operational".
 import threading
 
 from . import config
-from .pipeline.consumer import housekeeping, process_log
+from .pipeline.consumer import process_log
 from .sources import file_tailer, replay, synthetic, syslog_server
 
 _lock = threading.Lock()
@@ -34,7 +34,7 @@ def build(spec: str):
     happened" is the most expensive wrong answer this system can give.
     """
     if spec == "synthetic":
-        return synthetic.SyntheticSource(on_tick=housekeeping)
+        return synthetic.SyntheticSource()
 
     if spec == "syslog" or spec.startswith("syslog:"):
         port = syslog_server.DEFAULT_PORT
@@ -97,6 +97,27 @@ def running() -> dict:
 
 def any_alive() -> bool:
     return any(s.alive() for s in running().values())
+
+
+def dead() -> list[str]:
+    """Configured sources that are not running.
+
+    ``any_alive()`` is an OR, and health used to decide "ok" versus "down" from
+    it alone. Start ``--sources synthetic,syslog:5514`` with 5514 already bound
+    and the listener thread dies at bind while synthetic keeps going: the badge
+    read "All systems operational" over a port that was deaf. This module's own
+    docstring calls a source that was requested and quietly did not start the
+    most expensive wrong answer the system can give — and then the health
+    endpoint gave it.
+    """
+    return [spec for spec, s in running().items() if not s.alive()]
+
+
+def never_started(configured: tuple[str, ...] | None = None) -> list[str]:
+    """Configured sources that were never even constructed."""
+    configured = configured if configured is not None else config.get().sources
+    live = running()
+    return [spec for spec in configured if spec not in live]
 
 
 def status() -> list[dict]:

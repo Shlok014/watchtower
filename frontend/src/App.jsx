@@ -232,7 +232,16 @@ export default function App() {
       </div>
 
       <div className="section-row">
-        <Panel icon="📊" title="Event Type Distribution" dimmed={dimmed}>
+        <Panel
+          icon="📊"
+          title="Event Type Distribution"
+          tag={
+            stats?.distribution_window
+              ? `last ${stats.distribution_window} events, not lifetime`
+              : undefined
+          }
+          dimmed={dimmed}
+        >
           <div className="panel-body"><div className="chart-container">
             <EventDistChart data={stats?.event_distribution} />
           </div></div>
