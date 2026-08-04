@@ -13,11 +13,11 @@ is built to remove.
 
 import csv
 from collections import defaultdict
-from pathlib import Path
 
-from detection.parser import LogParser
+from watchtower import config
+from watchtower.detect.parser import LogParser
 
-DATA = Path(__file__).resolve().parent.parent / "data" / "datasets"
+DATA = config.get().datasets_dir
 
 
 def load_ground_truth(name: str):

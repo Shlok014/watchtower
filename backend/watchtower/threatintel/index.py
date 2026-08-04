@@ -20,6 +20,7 @@ import ipaddress
 import threading
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from pathlib import Path
 
 from . import parse, store
 from .feeds import FEEDS
@@ -70,7 +71,8 @@ class ReputationIndex:
 
     # ── build ────────────────────────────────────────────────────────────────
     @classmethod
-    def load(cls, cache_dir=store.CACHE_DIR) -> "ReputationIndex":
+    def load(cls, cache_dir: Path | None = None) -> "ReputationIndex":
+        cache_dir = store.default_cache_dir() if cache_dir is None else cache_dir
         idx = cls()
         manifest = store.load_manifest(cache_dir)
         for spec in FEEDS:
@@ -78,7 +80,7 @@ class ReputationIndex:
             entry = manifest.get("feeds", {}).get(spec.name, {})
             data = store.read_cached(spec, cache_dir, manifest)
             if data is None:
-                st.error = "not fetched — run `python -m threatintel.fetch`"
+                st.error = "not fetched — run `python -m watchtower.threatintel.fetch`"
                 idx.states[spec.name] = st
                 continue
             parsed = parse.parse(spec.parser, data)

@@ -21,7 +21,12 @@ from drain3 import TemplateMiner
 from drain3.file_persistence import FilePersistence
 from drain3.template_miner_config import TemplateMinerConfig
 
-STATE_DIR = Path(__file__).resolve().parent.parent / "data" / "drain"
+
+def state_dir() -> Path:
+    from .. import config
+
+    return config.get().drain_dir
+
 
 # Order matters: the first pattern that matches a span wins.
 MASKS = [
@@ -56,8 +61,9 @@ class LogParser:
         self.stream = stream
         cfg = build_config()
         if persist:
-            STATE_DIR.mkdir(parents=True, exist_ok=True)
-            store = FilePersistence(str(STATE_DIR / f"drain3_{stream}.bin"))
+            d = state_dir()
+            d.mkdir(parents=True, exist_ok=True)
+            store = FilePersistence(str(d / f"drain3_{stream}.bin"))
             self.miner = TemplateMiner(store, config=cfg)
         else:
             self.miner = TemplateMiner(config=cfg)

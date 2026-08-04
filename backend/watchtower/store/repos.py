@@ -11,11 +11,14 @@ an empty cell. The IP-reputation column, the one thing the README marks
 import json
 from datetime import UTC, datetime
 
+from .. import config
 from . import db
+
 
 # Retention. Time-based, because that is what a log store means by retention;
 # row-count caps would just be a ring buffer with extra steps.
-RETENTION_HOURS = 24
+def retention_hours() -> int:
+    return config.get().retention_hours
 
 
 def now_ms() -> int:
@@ -39,7 +42,7 @@ def retention_note() -> str:
     added to stop the app misrepresenting itself.
     """
     return (
-        f"SQLite (WAL) at {db.path().name}; events retained {RETENTION_HOURS}h unless "
+        f"SQLite (WAL) at {db.path().name}; events retained {retention_hours()}h unless "
         "referenced by an alert; ledger is append-only and exempt"
     )
 
@@ -456,11 +459,12 @@ def stats(buckets: int = 30, bucket_seconds: int = 10) -> dict:
 
 
 # ── retention & reset ────────────────────────────────────────────────────────
-def prune(conn, hours: int = RETENTION_HOURS) -> int:
+def prune(conn, hours: int | None = None) -> int:
     """Delete events older than the window, keeping anything an alert cites.
 
     The ledger is untouched.
     """
+    hours = retention_hours() if hours is None else hours
     cutoff = now_ms() - hours * 3600 * 1000
     cur = conn.execute(
         "DELETE FROM events WHERE ingested_ts_ms < ? "

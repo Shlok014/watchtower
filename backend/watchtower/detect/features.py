@@ -17,7 +17,13 @@ from pathlib import Path
 
 import numpy as np
 
-DATA = Path(__file__).resolve().parent.parent / "data" / "datasets"
+
+def datasets_dir() -> Path:
+    from .. import config
+
+    return config.get().datasets_dir
+
+
 BLK = re.compile(r"blk_-?\d+")
 
 # HDFS lines look like:
@@ -28,7 +34,7 @@ HEAD = re.compile(r"^\d{6}\s+\d{6}\s+\d+\s+\w+\s+[^:]+:\s*(.*)$")
 
 def load_labels() -> dict:
     labels = {}
-    with open(DATA / "anomaly_label.csv", newline="") as fh:
+    with open(datasets_dir() / "anomaly_label.csv", newline="") as fh:
         for row in csv.DictReader(fh):
             labels[row["BlockId"]] = 1 if row["Label"].strip().lower() == "anomaly" else 0
     return labels
@@ -41,7 +47,7 @@ def build_matrix(parser, limit: int | None = None, progress_every: int = 500_000
     seen_templates: set[int] = set()
     lines = matched = 0
 
-    with open(DATA / "HDFS.log", encoding="utf-8", errors="replace") as fh:
+    with open(datasets_dir() / "HDFS.log", encoding="utf-8", errors="replace") as fh:
         for line in fh:
             lines += 1
             if limit and lines > limit:

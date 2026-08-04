@@ -2,6 +2,9 @@
 line-length = 100
 target-version = "py312"
 extend-exclude = [".venv", "data"]
+# The importable roots. Without this, `watchtower` sorts as a third-party
+# package and every first-party import lands in the wrong isort block.
+src = ["backend"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
@@ -10,5 +13,17 @@ ignore = [
     "B008",   # Flask decorators legitimately call in defaults
 ]
 
+[tool.ruff.lint.isort]
+known-first-party = ["watchtower", "eval", "datasets", "tests"]
+
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["B011"]
+
+[tool.pytest.ini_options]
+testpaths = ["backend/tests"]
+# So `pytest` works from anywhere, not only as `python -m pytest` from backend/
+# — the -m form silently adds the cwd to sys.path and the bare form does not,
+# which makes "works on my machine" depend on which of the two you typed.
+pythonpath = ["backend"]
+# Quiet the third-party DeprecationWarnings that drown out our own.
+filterwarnings = ["ignore::DeprecationWarning:drain3.*"]

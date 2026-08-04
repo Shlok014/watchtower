@@ -8,7 +8,18 @@ import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 
-CACHE_DIR = Path(__file__).resolve().parent.parent / "data" / "feeds"
+
+def default_cache_dir() -> Path:
+    """Where feed caches live. Resolved from config, not from ``__file__``."""
+    from .. import config
+
+    return config.get().feeds_dir
+
+
+def _resolve(cache_dir: Path | None) -> Path:
+    return default_cache_dir() if cache_dir is None else cache_dir
+
+
 MANIFEST_NAME = "manifest.json"
 SCHEMA = 1
 
@@ -37,8 +48,8 @@ def atomic_write_bytes(path: Path, data: bytes) -> None:
         raise
 
 
-def load_manifest(cache_dir: Path = CACHE_DIR) -> dict:
-    path = cache_dir / MANIFEST_NAME
+def load_manifest(cache_dir: Path | None = None) -> dict:
+    path = _resolve(cache_dir) / MANIFEST_NAME
     try:
         data = json.loads(path.read_text())
     except (OSError, ValueError):
@@ -48,10 +59,11 @@ def load_manifest(cache_dir: Path = CACHE_DIR) -> dict:
     return data
 
 
-def save_manifest(manifest: dict, cache_dir: Path = CACHE_DIR) -> None:
+def save_manifest(manifest: dict, cache_dir: Path | None = None) -> None:
     manifest["schema"] = SCHEMA
     atomic_write_bytes(
-        cache_dir / MANIFEST_NAME, json.dumps(manifest, indent=2, sort_keys=True).encode()
+        _resolve(cache_dir) / MANIFEST_NAME,
+        json.dumps(manifest, indent=2, sort_keys=True).encode(),
     )
 
 
@@ -59,13 +71,14 @@ def sha256_bytes(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def read_cached(spec, cache_dir: Path = CACHE_DIR, manifest: dict | None = None):
+def read_cached(spec, cache_dir: Path | None = None, manifest: dict | None = None):
     """Return the cached bytes for a feed, or None.
 
     Verifies the recorded sha256. A mismatch means a truncated or corrupted
     cache, and it is reported as *missing* rather than loaded partially — a
     partial blocklist would answer "unlisted" for addresses it simply never saw.
     """
+    cache_dir = _resolve(cache_dir)
     path = cache_dir / spec.filename
     try:
         data = path.read_bytes()

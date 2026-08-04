@@ -21,7 +21,9 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
-DATA = Path(__file__).resolve().parent.parent / "data" / "datasets"
+from watchtower import config
+
+DATA = config.get().datasets_dir
 
 SAMPLES = {
     "HDFS_2k.log": "https://raw.githubusercontent.com/logpai/loghub/master/HDFS/HDFS_2k.log",
