@@ -48,7 +48,13 @@ CREATE TABLE IF NOT EXISTS events (
     rep_score       REAL    NOT NULL,
     rep_sources     TEXT    NOT NULL,   -- JSON array
     rep_checked     INTEGER NOT NULL CHECK (rep_checked IN (0,1)),
-    rep_detail      TEXT    NOT NULL
+    rep_detail      TEXT    NOT NULL,
+
+    -- Suppressed by the blocklist before detection ran. The row is still
+    -- stored, and still chained into the ledger: an audit ledger that omits the
+    -- events a response action silenced has a hole exactly where the
+    -- interesting traffic is.
+    dropped         INTEGER NOT NULL DEFAULT 0 CHECK (dropped IN (0,1))
 );
 
 -- Serves the stats time buckets and retention sweeps.
@@ -57,6 +63,7 @@ CREATE INDEX IF NOT EXISTS idx_events_ingested ON events (ingested_ts_ms);
 CREATE INDEX IF NOT EXISTS idx_events_ip_ingested ON events (ip, ingested_ts_ms);
 CREATE INDEX IF NOT EXISTS idx_events_severity ON events (severity);
 CREATE INDEX IF NOT EXISTS idx_events_origin ON events (origin);
+CREATE INDEX IF NOT EXISTS idx_events_dropped ON events (dropped);
 
 -- ── alerts ───────────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS alerts (
@@ -100,8 +107,12 @@ CREATE TABLE IF NOT EXISTS soar_steps (
     execution_id  INTEGER NOT NULL REFERENCES soar_executions(id) ON DELETE CASCADE,
     position      INTEGER NOT NULL,
     action        TEXT    NOT NULL,
-    status        TEXT    NOT NULL,
+    status        TEXT    NOT NULL CHECK (status IN ('executed','failed','skipped','selected')),
     executed      INTEGER NOT NULL CHECK (executed IN (0,1)),
+    -- Whether the playbook marked this step required. It decides the alert's
+    -- status, so it has to be stored: without it the API can report that a step
+    -- failed but not whether that failure was allowed to happen.
+    required      INTEGER NOT NULL DEFAULT 0 CHECK (required IN (0,1)),
     duration_us   REAL    NOT NULL,
     detail        TEXT    NOT NULL
 );
@@ -140,3 +151,27 @@ CREATE TABLE IF NOT EXISTS schema_meta (
     key    TEXT PRIMARY KEY,
     value  TEXT NOT NULL
 );
+
+-- ── blocklist ────────────────────────────────────────────────────────────────
+-- The closed loop. A `block_ip` action writes here; the pipeline consumer
+-- checks this table *before* detection and marks matching events dropped, so a
+-- blocked address is really suppressed rather than merely recorded as blocked.
+--
+-- Enforcement is at this application's own ingestion layer. Nothing here
+-- touches pf, iptables or any firewall, and nothing needs root — see the README
+-- for why that scope was chosen deliberately rather than reached for.
+--
+-- UNIQUE on ip: re-blocking an address extends its expiry and keeps its hit
+-- count, rather than creating a second row that splits the count in half and
+-- makes every "N events dropped from X" figure an undercount.
+CREATE TABLE IF NOT EXISTS blocklist (
+    id             INTEGER PRIMARY KEY,
+    ip             TEXT    NOT NULL UNIQUE,
+    reason         TEXT    NOT NULL,
+    alert_id       INTEGER REFERENCES alerts(id) ON DELETE SET NULL,
+    created_ts_ms  INTEGER NOT NULL,
+    expires_ts_ms  INTEGER NOT NULL,
+    hits           INTEGER NOT NULL DEFAULT 0,
+    last_hit_ts_ms INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_blocklist_expires ON blocklist (expires_ts_ms);

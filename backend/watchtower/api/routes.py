@@ -12,6 +12,9 @@ from flask import Blueprint, abort, jsonify, request
 from .. import config, ledger, runtime, telemetry, threatintel
 from ..detect import model, rules, stream, train
 from ..pipeline.consumer import process_log
+from ..soar import actions as soar_actions
+from ..soar import engine as soar_engine
+from ..soar import playbooks
 from ..sources import synthetic
 from ..store import db as store_db
 from ..store import repos, retention_note
@@ -86,6 +89,8 @@ def get_stats():
             "event_distribution": st["event_distribution"],
             "source_distribution": st["source_distribution"],
             "origin_distribution": st["origin_distribution"],
+            # Enforcement, surfaced on the same poll the dashboard already makes.
+            **repos.blocklist_totals(),
             "uptime_seconds": telemetry.uptime_seconds(),
             "sources": synthetic.SOURCES,
         }
@@ -100,6 +105,55 @@ def get_blockchain():
 @bp.route("/soar-actions", methods=["GET"])
 def get_soar_actions():
     return jsonify(repos.recent_soar(query_int("limit", 30, 1, 500)))
+
+
+@bp.route("/blocklist", methods=["GET"])
+def get_blocklist():
+    """Who is blocked, why, until when, and how much traffic it has suppressed.
+
+    ``events_dropped`` is the number that makes the loop visible: it counts
+    events this pipeline really discarded before detection ran, not actions it
+    reported taking.
+    """
+    include_expired = request.args.get("include_expired", "").lower() in ("1", "true", "yes")
+    return jsonify(
+        {
+            "entries": repos.blocklist(
+                include_expired=include_expired, limit=query_int("limit", 100, 1, 500)
+            ),
+            "totals": repos.blocklist_totals(),
+            "enforcement": (
+                "Blocks are enforced at this pipeline's ingestion layer: a blocked "
+                "address has its later events marked dropped before detection runs. "
+                "Nothing here touches pf, iptables or any firewall, and nothing "
+                "needs root."
+            ),
+        }
+    )
+
+
+@bp.route("/blocklist/<ip>", methods=["DELETE"])
+def delete_block(ip: str):
+    with store_db.write() as conn:
+        removed = repos.unblock(conn, ip)
+    if not removed:
+        return jsonify({"status": "not_blocked", "ip": ip}), 404
+    return jsonify({"status": "unblocked", "ip": ip})
+
+
+@bp.route("/playbooks", methods=["GET"])
+def get_playbooks():
+    """The response policy, as loaded. Policy nobody can read is policy nobody audits."""
+    try:
+        return jsonify(
+            {
+                "playbooks": soar_engine.describe(),
+                "actions": sorted(soar_actions.ACTIONS),
+                "directory": str(playbooks.playbooks_dir()),
+            }
+        )
+    except playbooks.PlaybookError as exc:
+        return jsonify({"error": "invalid_playbooks", "detail": str(exc)}), 500
 
 
 @bp.route("/threat-intel", methods=["GET"])
@@ -284,6 +338,7 @@ def _component_health():
     c = repos.counters()
     retained = store_db.connect().execute("SELECT count(*) FROM events").fetchone()[0]
     feeds = threatintel.get_index()
+    blocks = repos.blocklist_totals()
     feed_ok = feeds.usable
     stale = any(s.state == threatintel.STALE for s in feeds.states.values())
 
@@ -303,6 +358,11 @@ def _component_health():
         [
             stage("Ingest Queue", "📡", "ingest", f"{c['events']} ingested", gen_status),
             stage("Normalization", "⚙️", "normalize", f"{retained} retained", gen_status),
+            # The ledger sits here, not at the end, because that is where it
+            # runs: events are chained as they arrive, before anything decides
+            # what they mean. The panel used to show it last, describing an
+            # order the code did not follow.
+            stage("Audit Ledger", "🔗", "ledger", f"{c['blocks']} blocks"),
             stage(
                 "Detection Engine",
                 "🧠",
@@ -311,8 +371,14 @@ def _component_health():
                 "running" if feed_ok else "degraded",
             ),
             stage("Alert System", "🚨", "alert", f"{c['alerts']} raised"),
-            stage("SOAR Engine", "🤖", "alert", f"{c['soar']} playbooks selected", "simulated"),
-            stage("Audit Ledger", "🔗", "ledger", f"{c['blocks']} blocks"),
+            stage(
+                "SOAR Engine",
+                "🤖",
+                "alert",
+                f"{blocks['active_blocks']} active blocks, "
+                f"{blocks['events_dropped_lifetime']} events dropped",
+                "running",
+            ),
         ],
         feed_ok,
         stale,

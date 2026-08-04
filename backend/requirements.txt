@@ -24,6 +24,13 @@ scikit-learn==1.9.0
 joblib==1.5.3
 drain3==0.9.11
 
+# Response playbooks are YAML: which events get contained, in what order, and
+# which steps may fail is configuration a security team changes without shipping
+# code. Loaded with safe_load only — yaml.load can construct arbitrary Python
+# objects from a document, and a response engine that executes its own config is
+# not the place to accept that.
+PyYAML==6.0.3
+
 # Deliberately absent: pandas (csv and Counter are enough here, and it is 60 MB
 # of dependency for two loops), and any deep-learning framework. Both are
 # roadmap lines, not dependencies.

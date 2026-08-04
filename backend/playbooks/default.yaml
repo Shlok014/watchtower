@@ -1,0 +1,10 @@
+# Matched when no playbook names the event. Notify only: inventing a
+# containment action for an event nobody wrote a policy for is how a response
+# system starts blocking things it was never asked to block.
+name: Default notification
+trigger: "*"
+priority: P3
+actions:
+  - action: notify
+    required: false
+    message: "{event} from {ip} — no playbook is defined for this event type"

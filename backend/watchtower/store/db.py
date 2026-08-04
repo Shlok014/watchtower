@@ -17,7 +17,8 @@ import threading
 from pathlib import Path
 
 SCHEMA_PATH = Path(__file__).resolve().parent / "schema.sql"
-SCHEMA_VERSION = "1"
+MIGRATIONS_DIR = Path(__file__).resolve().parent / "migrations"
+SCHEMA_VERSION = 2
 
 _local = threading.local()
 # Resolved lazily from config rather than captured at import. Bound at import,
@@ -105,19 +106,91 @@ def connect() -> sqlite3.Connection:
     return conn
 
 
-def _apply_schema(conn: sqlite3.Connection) -> None:
-    conn.executescript(SCHEMA_PATH.read_text())
-    conn.execute(
-        "INSERT INTO schema_meta(key, value) VALUES('schema_version', ?) "
-        "ON CONFLICT(key) DO NOTHING",
-        (SCHEMA_VERSION,),
-    )
-    found = conn.execute("SELECT value FROM schema_meta WHERE key = 'schema_version'").fetchone()[0]
-    if found != SCHEMA_VERSION:
+def _recorded_version(conn: sqlite3.Connection) -> int | None:
+    """The version stamped in the file, or None for a database with no stamp."""
+    try:
+        row = conn.execute("SELECT value FROM schema_meta WHERE key = 'schema_version'").fetchone()
+    except sqlite3.OperationalError:
+        return None  # schema_meta itself does not exist yet: brand new file
+    if row is None:
+        return None
+    try:
+        return int(row[0])
+    except (TypeError, ValueError):
         raise RuntimeError(
-            f"database at {path()} has schema version {found}, this build expects "
-            f"{SCHEMA_VERSION}. Delete the file or migrate it; refusing to run against "
-            "a schema this code does not understand."
+            f"database at {path()} has an unreadable schema_version {row[0]!r}"
+        ) from None
+
+
+def migrations() -> dict[int, Path]:
+    """Numbered migration scripts, keyed by the version they produce."""
+    found = {}
+    if MIGRATIONS_DIR.is_dir():
+        for f in sorted(MIGRATIONS_DIR.glob("*.sql")):
+            try:
+                found[int(f.name.split("_", 1)[0])] = f
+            except ValueError:
+                continue
+    return found
+
+
+def _apply_schema(conn: sqlite3.Connection) -> None:
+    """Create or migrate, and refuse to run against anything else.
+
+    ``schema.sql`` is always the *current* schema, so a fresh database gets the
+    finished article and skips every migration. Migrations exist only for files
+    created at an older version — which is why they must never be run against a
+    new one: ``002`` adds a column ``schema.sql`` already declares, and the ALTER
+    would fail with "duplicate column name" on every clean install.
+    """
+    before = _recorded_version(conn)
+
+    if before is None:
+        # New file (or one predating the stamp). CREATE ... IF NOT EXISTS
+        # throughout, so this is safe on a database that already has the tables.
+        conn.executescript(SCHEMA_PATH.read_text())
+        conn.execute(
+            "INSERT INTO schema_meta(key, value) VALUES('schema_version', ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (str(SCHEMA_VERSION),),
+        )
+        return
+
+    if before == SCHEMA_VERSION:
+        conn.executescript(SCHEMA_PATH.read_text())
+        return
+
+    if before > SCHEMA_VERSION:
+        raise RuntimeError(
+            f"database at {path()} has schema version {before}, but this build only "
+            f"understands {SCHEMA_VERSION}. It was written by a newer Watchtower; "
+            "running against it would silently ignore columns this code cannot see."
+        )
+
+    available = migrations()
+    missing = [v for v in range(before + 1, SCHEMA_VERSION + 1) if v not in available]
+    if missing:
+        raise RuntimeError(
+            f"database at {path()} is at schema version {before} and this build expects "
+            f"{SCHEMA_VERSION}, but migration(s) {missing} are missing. Refusing to run "
+            "against a schema this code does not understand."
+        )
+
+    for version in range(before + 1, SCHEMA_VERSION + 1):
+        script = available[version]
+        print(f"⬆️  migrating {path().name}: schema {version - 1} → {version} ({script.name})")
+        # The migration and its version stamp go in one transaction. SQLite's
+        # DDL is transactional, and without this a migration that failed
+        # halfway would leave the stamp unchanged — so the next start would
+        # re-run it, and `ALTER TABLE ADD COLUMN` is not idempotent. The
+        # database would then be permanently unopenable with "duplicate column
+        # name", which is a worse outcome than the original failure.
+        conn.executescript(
+            "BEGIN;\n"
+            + script.read_text()
+            + "\nINSERT INTO schema_meta(key, value) VALUES('schema_version', "
+            + f"'{version}') ON CONFLICT(key) DO UPDATE SET value = excluded.value;\n"
+            + "COMMIT;\n"
         )
 
 

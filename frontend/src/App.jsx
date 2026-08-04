@@ -104,10 +104,12 @@ function PipelineBar({ stats, health }) {
   const nodes = [
     { icon: '📡', label: 'Ingest Queue', sub: `${stats?.total_logs || 0} ingested`, state: stateOf('Ingest Queue') },
     { icon: '⚙️', label: 'Normalization', sub: `${stats?.logs_retained || 0} retained`, state: stateOf('Normalization') },
+    // Ledger before detection: that is the order the pipeline actually runs in.
+    // Events are chained as they arrive, before anything decides what they mean.
+    { icon: '🔗', label: 'Audit Ledger', sub: `${stats?.total_blocks || 0} blocks`, state: stateOf('Audit Ledger') },
     { icon: '🧠', label: 'Detection Engine', sub: stats?.ruleset_version || '—', state: stateOf('Detection Engine') },
     { icon: '🚨', label: 'Alerts', sub: `${stats?.total_alerts || 0} raised`, state: stateOf('Alert System') },
-    { icon: '🤖', label: 'SOAR', sub: `${stats?.soar_actions_count || 0} selected`, state: stateOf('SOAR Engine') },
-    { icon: '🔗', label: 'Audit Ledger', sub: `${stats?.total_blocks || 0} blocks`, state: stateOf('Audit Ledger') },
+    { icon: '🤖', label: 'SOAR', sub: `${stats?.events_dropped_lifetime || 0} events dropped`, state: stateOf('SOAR Engine') },
     { icon: '📊', label: 'Dashboard', sub: `${health?.events_per_second ?? 0} ev/s`, state: health ? 'running' : 'unknown' },
   ]
   return (
@@ -327,8 +329,8 @@ function AlertsPanel({ alerts }) {
                 {a.soar_response.playbook_steps?.map((act, j) => (
                   <span className="alert-action-tag" key={j}>→ {act}</span>
                 ))}
-                <span className="soar-time-tag" title="No integration is configured; these steps were selected, not executed.">
-                  playbook selected · not executed
+                <span className="soar-time-tag" title="Status earned by the steps that actually ran.">
+                  {a.soar_response.status}
                 </span>
               </div>
             )}
@@ -354,7 +356,9 @@ function SOARPanel({ actions }) {
             <div className="empty-state">No playbooks selected yet</div>
           ) : actions.slice(0, 20).map((s, i) => (
             <div className="soar-item" key={s.id || i}>
-              <span className="soar-status-icon" title="Playbook matched and selected. No action was executed.">→</span>
+              <span className="soar-status-icon" title={s.status === 'contained' ? 'Required steps ran; the address is blocked at the ingestion layer.' : s.status === 'action_failed' ? 'A required step failed. The alert is still open.' : 'Playbook ran. See the steps for what executed.'}>
+                {s.status === 'contained' ? '✓' : s.status === 'action_failed' ? '✕' : '→'}
+              </span>
               <div className="soar-details">
                 <div className="soar-playbook">
                   <span className={`priority-tag ${s.priority}`}>{s.priority}</span>
@@ -362,7 +366,8 @@ function SOARPanel({ actions }) {
                 </div>
                 <div className="soar-actions-list">{s.playbook_steps?.join(' → ')}</div>
                 <div className="soar-timing">
-                  selected in {s.selection_time_us}µs — steps not executed
+                  {s.status} · {s.execution_steps?.filter(x => x.executed).length || 0} of{' '}
+                  {s.execution_steps?.length || 0} steps executed in {s.selection_time_us}µs
                 </div>
               </div>
               <span style={{ fontSize: '0.65rem', color: 'var(--text-dim)', fontFamily: 'var(--font-mono)' }}>{s.ip}</span>

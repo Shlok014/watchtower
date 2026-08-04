@@ -1,0 +1,285 @@
+"""Response actions that actually do something, and say so when they do not.
+
+Every action returns an ``Outcome``. There are exactly three statuses and they
+mean what they say:
+
+    executed   the side effect happened, and the detail says what it was
+    failed     it was attempted and did not work — connection refused, no
+               write permission — and the detail carries the error
+    skipped    it was not attempted, because nothing is configured to attempt
+               it with. Not a failure. Not a success either.
+
+The version this replaces returned a list of strings like ``"IP Blocked"``,
+stamped each one "completed" with a `random.randint(120, 850)` duration, and set
+the alert to `mitigated` on the next line. Nothing was ever contacted.
+
+**Scope, stated deliberately.** Enforcement happens at this application's own
+ingestion layer: a blocked address has its later events dropped before detection
+runs. Nothing here touches pf, iptables, or any firewall, and nothing needs
+root. "Real firewall integration would need pfctl and root; I scoped enforcement
+to the pipeline" is a defensible decision. A `pfctl` wrapper nobody dares demo
+is not.
+"""
+
+import json
+import os
+import time
+import urllib.error
+import urllib.request
+from dataclasses import dataclass
+from datetime import UTC, datetime
+
+from .. import config
+from ..store import repos
+
+EXECUTED = "executed"
+FAILED = "failed"
+SKIPPED = "skipped"
+
+WEBHOOK_TIMEOUT_S = 3.0
+
+
+@dataclass
+class Outcome:
+    status: str
+    detail: str
+    duration_us: float = 0.0
+    data: dict | None = None
+
+    @property
+    def executed(self) -> bool:
+        return self.status == EXECUTED
+
+    @property
+    def failed(self) -> bool:
+        return self.status == FAILED
+
+
+@dataclass
+class Context:
+    """Everything an action is allowed to know about the alert that fired it."""
+
+    conn: object
+    alert: dict
+    step_params: dict
+
+    def format(self, template: str) -> str:
+        try:
+            return template.format(
+                **{k: v for k, v in self.alert.items() if isinstance(v, str | int | float)}
+            )
+        except (KeyError, IndexError, ValueError):
+            # A bad placeholder in policy must not take down the response.
+            return template
+
+
+# ─── block_ip ────────────────────────────────────────────────────────────────
+def block_ip(ctx: Context) -> Outcome:
+    """Add the alert's address to the blocklist, with a TTL.
+
+    This is the closed loop: ``pipeline.consumer`` checks the blocklist *before*
+    detection, so events from this address are really suppressed from here on
+    and the drop is counted against the block that caused it.
+    """
+    ip = ctx.alert.get("ip")
+    if not ip:
+        return Outcome(FAILED, "alert carries no address to block")
+
+    ttl = int(ctx.step_params.get("ttl_seconds", 3600))
+    if ttl <= 0:
+        return Outcome(FAILED, f"ttl_seconds must be positive, got {ttl}")
+
+    reason = str(ctx.step_params.get("reason") or ctx.alert.get("event", "alert"))
+    row = repos.block_ip(
+        ctx.conn,
+        ip=ip,
+        reason=reason,
+        alert_id=ctx.alert.get("id"),
+        ttl_seconds=ttl,
+    )
+    return Outcome(
+        EXECUTED,
+        f"{ip} blocked for {ttl}s at this pipeline's ingestion layer "
+        f"(no firewall involved); expires {repos.to_iso(row['expires_ts_ms'])}",
+        data={"ip": ip, "ttl_seconds": ttl, "expires_at": repos.to_iso(row["expires_ts_ms"])},
+    )
+
+
+# ─── webhook ─────────────────────────────────────────────────────────────────
+def webhook(ctx: Context) -> Outcome:
+    """POST the alert to WATCHTOWER_WEBHOOK_URL, if one is configured.
+
+    Real network I/O with a real timeout. Connection refused is recorded as
+    ``failed``, not swallowed — a notifier that silently drops alerts is worse
+    than no notifier, because the operator believes someone was told.
+    """
+    url = ctx.step_params.get("url") or os.environ.get("WATCHTOWER_WEBHOOK_URL")
+    if not url:
+        return Outcome(SKIPPED, "no webhook configured (set WATCHTOWER_WEBHOOK_URL)")
+
+    payload = json.dumps(
+        {
+            "source": "watchtower",
+            "alert_id": ctx.alert.get("id"),
+            "event": ctx.alert.get("event"),
+            "ip": ctx.alert.get("ip"),
+            "severity": ctx.alert.get("severity"),
+            "anomaly_score": ctx.alert.get("anomaly_score"),
+            "explanation": ctx.alert.get("explanation"),
+            "timestamp": ctx.alert.get("timestamp"),
+        }
+    ).encode()
+
+    req = urllib.request.Request(
+        url, data=payload, headers={"Content-Type": "application/json"}, method="POST"
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=WEBHOOK_TIMEOUT_S) as resp:
+            return Outcome(
+                EXECUTED, f"POST {url} → HTTP {resp.status}", data={"status": resp.status}
+            )
+    except urllib.error.HTTPError as exc:
+        # A 4xx/5xx is a real answer from a real server, and it is still a
+        # failure to deliver.
+        return Outcome(FAILED, f"POST {url} → HTTP {exc.code}", data={"status": exc.code})
+    except (urllib.error.URLError, OSError, ValueError) as exc:
+        return Outcome(FAILED, f"POST {url} failed: {type(exc).__name__}: {exc}")
+
+
+# ─── incident_report ─────────────────────────────────────────────────────────
+def incident_report(ctx: Context) -> Outcome:
+    """Write a real INC-<date>-<seq>.md and .json with the evidence.
+
+    Includes the ledger heights covering the cited events, so the report points
+    at something whose integrity can be independently verified rather than
+    restating the alert in prose.
+    """
+    cfg = config.get()
+    directory = cfg.incidents_dir
+    try:
+        directory.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        return Outcome(FAILED, f"cannot create {directory}: {exc}")
+
+    day = datetime.now(UTC).strftime("%Y%m%d")
+    existing = sorted(directory.glob(f"INC-{day}-*.json"))
+    seq = len(existing) + 1
+    ident = f"INC-{day}-{seq:03d}"
+
+    alert = ctx.alert
+    ip = alert.get("ip", "")
+    evidence = repos.recent_events_for_ip(ctx.conn, ip, limit=20) if ip else []
+    event_ids = [e["id"] for e in evidence]
+    heights = repos.ledger_heights_for_events(ctx.conn, event_ids) if event_ids else []
+
+    record = {
+        "id": ident,
+        "opened_at": datetime.now(UTC).isoformat(),
+        "alert_id": alert.get("id"),
+        "event": alert.get("event"),
+        "severity": alert.get("severity"),
+        "ip": ip,
+        "user": alert.get("user"),
+        "anomaly_score": alert.get("anomaly_score"),
+        "explanation": alert.get("explanation"),
+        "ruleset_version": alert.get("ruleset_version"),
+        "evidence_event_ids": event_ids,
+        "covering_ledger_blocks": heights,
+        "verify_with": "python -m watchtower ledger verify",
+    }
+
+    try:
+        (directory / f"{ident}.json").write_text(json.dumps(record, indent=2))
+        (directory / f"{ident}.md").write_text(_incident_markdown(record, evidence))
+    except OSError as exc:
+        return Outcome(FAILED, f"could not write {ident}: {exc}")
+
+    return Outcome(
+        EXECUTED,
+        f"wrote {ident}.md and {ident}.json ({len(event_ids)} evidence events, "
+        f"{len(heights)} covering ledger blocks)",
+        data={"incident_id": ident, "path": str(directory / f"{ident}.md")},
+    )
+
+
+def _incident_markdown(r: dict, evidence: list) -> str:
+    lines = [
+        f"# {r['id']}",
+        "",
+        f"**Opened:** {r['opened_at']}  ",
+        f"**Event:** {r['event']} · **Severity:** {r['severity']} · "
+        f"**Score:** {r['anomaly_score']}  ",
+        f"**Address:** `{r['ip']}` · **User:** {r['user']}  ",
+        f"**Ruleset:** `{r['ruleset_version']}`",
+        "",
+        "## Why this fired",
+        "",
+        f"{r['explanation']}",
+        "",
+        "## Evidence",
+        "",
+        f"{len(r['evidence_event_ids'])} events from this address, covered by ledger "
+        f"blocks {_range_text(r['covering_ledger_blocks'])}.",
+        "",
+        "| Event | Time | Type | Severity | Message |",
+        "|---:|---|---|---|---|",
+    ]
+    for e in evidence[:20]:
+        msg = (e["message"] or "").replace("|", "\\|")[:90]
+        lines.append(f"| {e['id']} | {e['timestamp']} | {e['event']} | {e['severity']} | {msg} |")
+    lines += [
+        "",
+        "## Verifying this report",
+        "",
+        "The events above are chained into the tamper-evident audit ledger. Any",
+        "edit to one of them after the fact is detected:",
+        "",
+        "```bash",
+        f"{r['verify_with']}",
+        "```",
+        "",
+        "## What was and was not done",
+        "",
+        "This report is a record, not a remediation. Enforcement in this system",
+        "happens at the ingestion layer: a blocked address has its later events",
+        "dropped before detection runs. Nothing contacted a firewall, a mail",
+        "server, or a ticketing system.",
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def _range_text(heights: list) -> str:
+    if not heights:
+        return "(none — the events were pruned by retention)"
+    return f"{min(heights)}–{max(heights)}" if len(heights) > 1 else str(heights[0])
+
+
+# ─── notify ──────────────────────────────────────────────────────────────────
+def notify(ctx: Context) -> Outcome:
+    """Write a line to the process log. Honest about being exactly that."""
+    message = ctx.format(str(ctx.step_params.get("message", "alert raised")))
+    print(f"🔔 SOAR: {message}")
+    return Outcome(EXECUTED, f"logged to this process's stdout: {message}")
+
+
+ACTIONS = {
+    "block_ip": block_ip,
+    "webhook": webhook,
+    "incident_report": incident_report,
+    "notify": notify,
+}
+
+
+def run(name: str, ctx: Context) -> Outcome:
+    """Run one action, timing it and never letting it take the pipeline down."""
+    fn = ACTIONS.get(name)
+    if fn is None:
+        return Outcome(FAILED, f"no such action {name!r}")
+    t0 = time.perf_counter()
+    try:
+        outcome = fn(ctx)
+    except Exception as exc:
+        outcome = Outcome(FAILED, f"{type(exc).__name__}: {exc}")
+    outcome.duration_us = round((time.perf_counter() - t0) * 1e6, 1)
+    return outcome

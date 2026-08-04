@@ -1,0 +1,11 @@
+name: Port scan containment
+trigger: port_scan
+priority: P2
+actions:
+  - action: block_ip
+    required: true
+    ttl_seconds: 900
+    reason: sequential port scan
+  - action: notify
+    required: false
+    message: port scan from {ip}

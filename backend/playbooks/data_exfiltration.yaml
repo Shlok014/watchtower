@@ -1,0 +1,12 @@
+name: Data exfiltration response
+trigger: data_exfiltration
+priority: P1
+actions:
+  - action: block_ip
+    required: true
+    ttl_seconds: 7200
+    reason: large transfer to an external address
+  - action: incident_report
+    required: true
+  - action: webhook
+    required: false

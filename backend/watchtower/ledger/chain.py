@@ -36,17 +36,19 @@ from dataclasses import dataclass, field
 # The exact serialisation, named so it can be reproduced. json.dumps defaults to
 # ensure_ascii=True and ', ' / ': ' separators — "utf8 json" would not be enough
 # to reproduce a single byte, and a digest you cannot reproduce is not evidence.
-PAYLOAD_CANON = "py-json-sortkeys-ensureascii-defaultsep-v1"
+CANON_V1 = "py-json-sortkeys-ensureascii-defaultsep-v1"
+CANON_V2 = "py-json-sortkeys-ensureascii-defaultsep-v2"
+PAYLOAD_CANON = CANON_V2
 
-# Pinned field tuple. Hashing the whole dict would break every historical digest
-# the moment a field is added to events — which is exactly what would have
-# happened when `geo` was replaced by `reputation`.
+# Pinned field tuples. Hashing the whole dict would break every historical
+# digest the moment a field is added to events — which is exactly what would
+# have happened when `geo` was replaced by `reputation`.
 # ts_ms, not the ISO string: the digest must cover the value as *stored*.
 # Hashing the ISO form at append and reconstructing it from milliseconds at
 # verify loses sub-millisecond precision, so every digest mismatches and the
 # whole chain reports as tampered. That bug is invisible until verification
 # actually recomputes something — which the previous implementation never did.
-CANON_FIELDS = (
+_V1_FIELDS = (
     "id",
     "ts_ms",
     "source",
@@ -60,16 +62,54 @@ CANON_FIELDS = (
     "origin",
 )
 
+# v2 adds `dropped`. It has to be inside the digest: it is the record of which
+# events a response action suppressed, and in a system whose selling point is
+# that enforcement is real, "which traffic was silenced" is exactly the field
+# worth protecting. Left outside, flipping dropped 1 → 0 with raw SQL would
+# rewrite the enforcement history and `verify` would still report a clean chain.
+_V2_FIELDS = (*_V1_FIELDS, "dropped")
+
+CANON_FIELDS_BY_VERSION = {CANON_V1: _V1_FIELDS, CANON_V2: _V2_FIELDS}
+# Kept as the current tuple for callers that just want "the fields".
+CANON_FIELDS = _V2_FIELDS
+
 GENESIS_PREV = "0" * 64
 
 
-def canonical(event: dict) -> str:
-    """Serialise an event to the exact bytes that get hashed."""
-    return json.dumps({k: event.get(k) for k in CANON_FIELDS}, sort_keys=True, default=str)
+class UnknownCanon(ValueError):
+    """A block records a serialisation this build cannot reproduce."""
 
 
-def payload_hash(event: dict) -> str:
-    return hashlib.sha256(canonical(event).encode()).hexdigest()
+def canonical(event: dict, canon: str = PAYLOAD_CANON) -> str:
+    """Serialise an event to the exact bytes that get hashed.
+
+    ``canon`` selects the field tuple. This is why the ledger row stores the
+    name: a block written under v1 must go on verifying under v1 forever, or
+    adding one field to the schema retroactively accuses every historical block
+    of being tampered with — a false alarm that is indistinguishable, to anyone
+    reading the output, from a real one.
+    """
+    fields = CANON_FIELDS_BY_VERSION.get(canon)
+    if fields is None:
+        raise UnknownCanon(canon)
+    return json.dumps({k: _coerce(k, event.get(k)) for k in fields}, sort_keys=True, default=str)
+
+
+# Fields whose Python type at append differs from their SQLite type at verify.
+# `dropped` arrives as a bool on the way in and comes back as 0/1 — and
+# json.dumps writes `true` for one and `0` for the other, so every block would
+# fail verification with a payload_mismatch that names tampering nobody did.
+_INT_FLAGS = frozenset({"dropped"})
+
+
+def _coerce(key: str, value):
+    if key in _INT_FLAGS:
+        return int(bool(value))
+    return value
+
+
+def payload_hash(event: dict, canon: str = PAYLOAD_CANON) -> str:
+    return hashlib.sha256(canonical(event, canon).encode()).hexdigest()
 
 
 def block_hash(height: int, ts_ms: int, prev_hash: str, payload_digest: str) -> str:
@@ -132,10 +172,10 @@ def verify(conn, page: int = 500) -> VerifyResult:
 
     while True:
         rows = conn.execute(
-            """SELECT l.block_id, l.ts_ms, l.event_id, l.payload_json,
+            """SELECT l.block_id, l.ts_ms, l.event_id, l.payload_json, l.payload_canon,
                       l.log_hash, l.prev_hash, l.hash,
                       e.id AS e_id, e.ts_ms AS e_ts_ms, e.source, e.event, e.event_type,
-                      e.severity, e.ip, e.user, e.message, e.log_format, e.origin
+                      e.severity, e.ip, e.user, e.message, e.log_format, e.origin, e.dropped
                FROM ledger l
                LEFT JOIN events e ON e.id = l.event_id
                WHERE l.block_id > ?
@@ -183,8 +223,27 @@ def verify(conn, page: int = 500) -> VerifyResult:
                     "message": r["message"],
                     "log_format": r["log_format"],
                     "origin": r["origin"],
+                    "dropped": r["dropped"],
                 }
-                recomputed = payload_hash(live)
+                # Each block is recomputed under the serialisation IT records,
+                # not under the current one. Otherwise adding a single field
+                # would retroactively accuse every older block of tampering —
+                # a false alarm indistinguishable, in the output, from a real
+                # one, which would make the whole check worthless.
+                try:
+                    recomputed = payload_hash(live, r["payload_canon"])
+                except UnknownCanon:
+                    _fail(
+                        result,
+                        height,
+                        r["block_id"],
+                        "unknown_canon",
+                        f"block records serialisation {r['payload_canon']!r}, which this "
+                        "build cannot reproduce — its digest can be neither confirmed "
+                        "nor refuted",
+                    )
+                    prev_hash = r["hash"]
+                    continue
 
             if recomputed != r["log_hash"]:
                 _fail(

@@ -1,0 +1,13 @@
+name: Flagged address containment
+trigger: suspicious_ip
+priority: P2
+actions:
+  - action: block_ip
+    required: true
+    ttl_seconds: 1800
+    reason: address appears on a cached public threat feed
+  - action: webhook
+    required: false
+  - action: notify
+    required: false
+    message: connection from flagged address {ip}
