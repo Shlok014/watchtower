@@ -19,7 +19,43 @@ land first, then the flip. That also means **CI has still never produced a green
 run**, since Actions is refused for billing on a private repo. No CI badge until
 it has; the README carries a comment where the badge would go saying so.
 
-## The one thing left: screenshots and GIFs
+## The clean-clone gate — run, and it found four bugs
+
+The plan calls this the final gate: *"clone the repo into a temp dir on this same
+Mac, run `make setup && make dev`, and confirm the dashboard comes up. If that
+fails for a stranger, nothing else in this plan matters."* It had never been run.
+It now has, and **it failed twice before it passed**:
+
+1. **`backend/pytest.ini` shadowed the root config.** pytest takes the nearest
+   config walking up from the invocation directory, so running from `backend/` —
+   what CI does — used it and everything in `pyproject.toml` was silently
+   inactive there, including the warning filters. Deleted; one config now.
+2. **`requirements-ml.txt` was a stale duplicate** headed *"not needed to run the
+   dashboard"*, which stopped being true when the app began loading a model at
+   startup. Merged into `requirements.txt` and deleted.
+3. **`make dev` was broken on every Mac.** `scripts/dev.sh` ended in `wait -n`,
+   which is bash 4.3+; macOS ships 3.2.57 and always will. It failed with
+   *"wait: -n: invalid option"*, took the EXIT trap with it, killed the backend
+   and orphaned the dashboard. Replaced with a poll loop; both scripts now pass
+   `/bin/bash -n`.
+4. **Five targets could not import the app.** The package is at
+   `backend/watchtower`, recipes run from the repository root, and `python -m`
+   adds only the current directory to `sys.path` — so `dev`, `backend`, `feeds`,
+   `verify` and `demo` all died with *"No module named watchtower"*. The three
+   that worked (`test`, `lint`, `bench`) are exactly the three that had been run
+   before. Fixed with one exported `PYTHONPATH`.
+
+**The gate now passes.** On a virgin clone: `make setup`, 128 + 36 tests, `make
+lint` with all three gates, `make verify`, `make bench`, and `make dev` bringing
+up both services. 988 events flowed (911 from real HDFS replay, 77 synthetic),
+an attack blocked 5 addresses and really dropped 18 events, and 989 ledger blocks
+verified clean.
+
+`scripts/check_published_numbers.py` was added along the way: `docs/metrics.json`
+and `docs/METRICS.md` cannot disagree because one generates the other, but the
+README and this file are hand-written. 43 figures checked.
+
+## The one thing left## The one thing left: screenshots and GIFs
 
 Everything below needs a browser, which is why it is not done — the Chrome
 extension was not connected during the build. **No image is referenced anywhere
