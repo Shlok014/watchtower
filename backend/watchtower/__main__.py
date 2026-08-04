@@ -119,8 +119,20 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--db", help="path to the database file")
     sub = ap.add_subparsers(dest="group", required=True)
 
-    run = sub.add_parser("run", help="start the API and the configured sources")
-    run.add_argument("--sources", help="comma-separated source list, e.g. synthetic,syslog")
+    run = sub.add_parser(
+        "run",
+        help="start the API and the configured sources",
+        epilog=(
+            "sources: synthetic | syslog[:port] | file:<path> | "
+            "replay:<hdfs|openssh>[@events-per-second]\n"
+            "example: --sources synthetic,syslog,file:/var/log/system.log,replay:hdfs@25"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    run.add_argument(
+        "--sources",
+        help="comma-separated source list; see the examples at the end of --help",
+    )
     run.add_argument("--port", type=int)
     run.add_argument("--host")
     run.set_defaults(_fn=_run)

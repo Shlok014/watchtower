@@ -21,7 +21,7 @@ and a SHA-256 hash-chained audit ledger — Flask + React.**
 
 | Component | Current implementation | Status |
 |---|---|---|
-| Log ingestion | In-process list; synthetic generator thread, 7 source profiles. Every event carries `origin: "synthetic"`. | ⚠️ synthetic input, honestly labelled |
+| **Log ingestion** | Four sources through one pipeline: **UDP syslog** (RFC 3164 + 5424), **file tail** with inode rotation detection, **dataset replay** of real loghub logs, and the synthetic generator. Every event carries a mandatory `origin`, and the dashboard groups by it. | ✅ **real** — synthetic input still available, and labelled |
 | Normalization | Severity and event-type classification | ✅ real |
 | **IP reputation** | Live lookup against the **Tor Project bulk exit list** (1,380 entries) and **FireHOL level1** (4,580 CIDRs), cached locally with a provenance manifest. Every verdict names its feed and fetch date. Non-routable addresses short-circuit before the lookup. | ✅ **real, measured** |
 | Detection (live dashboard) | Sliding-window features (failed logins/60s, event rate/30s) + reputation, weighted. Deterministic: identical input and window state give an identical score. Versioned by the hash of the weights themselves. | ✅ real rules — **not** ML, and not called ML |
@@ -37,6 +37,68 @@ Detection is a **rule engine**, deliberately. Three sliding-window features and 
 weighted sum is what SIEM correlation rules actually are; the dishonest part was
 never the rules, it was calling them "LogLM AI" and adding noise so the output
 looked like a model.
+
+## Ingestion sources
+
+Four of them, and every one goes through **the same** `process_log`. There is no
+separate demo path, so nothing here can be true of the synthetic stream and
+false of a real one. Every event carries a mandatory `origin`, which the
+dashboard groups by — simulated traffic is *labelled*, not hidden.
+
+```bash
+python -m watchtower run --sources synthetic,syslog,file:/var/log/system.log,replay:hdfs@25
+```
+
+| Spec | What it is |
+|---|---|
+| `synthetic` | The generator. Real randomness, producing input data, labelled `origin: synthetic` |
+| `syslog[:port]` | UDP listener, RFC 3164 and RFC 5424, default port **5514** |
+| `file:<path>` | `tail -F` with inode-based rotation detection |
+| `replay:<hdfs\|openssh>[@rate]` | Streams a real loghub dataset through the live pipeline |
+
+**Replay is the one that matters.** A 2008 HDFS line keeps its 2008 timestamp in
+`ts_ms`; `ingested_ts_ms` is when this process saw it. Detection windows and the
+dashboard timeline key on ingest time — key them on event time instead and a
+replay produces zero detections and a flat timeline while the ingest counter
+climbs, which is silent and indistinguishable from a quiet network.
+
+It also stays honest about what the data is. **HDFS is a filesystem log; nothing
+in it is an attack.** Lines keep their own level (INFO/WARN/ERROR) and that is
+all the severity they get. Mapping "WARN" onto "suspicious_ip" would manufacture
+a threat judgement the data never made. Replay demonstrates that real volume
+flows through real code — any alert it raises comes from the correlation windows
+on real addresses, never from a lookup table of scary words. Measured on this
+machine: 167 replayed events, 0 alerts, 0 fabricated threats.
+
+OpenSSH replay is different, and the difference is the point: an sshd log
+genuinely *is* an authentication log, so `Failed password for invalid user` is
+matched literally and becomes `failed_login`. Nothing is inferred beyond the
+message the daemon emitted about itself.
+
+Two details in the syslog listener worth the thirty seconds:
+
+* **The address comes from the socket, not the message.** RFC 3164's HOSTNAME is
+  whatever the sender wrote, and forwarders rewrite it routinely. The peer
+  address is the one thing about a datagram the sender could not simply assert,
+  so that is what correlation keys on. The claimed hostname is kept as `source`,
+  and not trusted as an address.
+* **Port 5514, not 514,** because 514 needs root and a tool that asks for root
+  to accept a datagram has made a bad trade. Note that `logger -n host -P port`
+  is util-linux and **the BSD `logger` macOS ships rejects it**. Portable:
+
+```bash
+printf '<34>Aug  4 21:00:10 fw sshd[99]: Failed password for root from 198.51.100.4\n' \
+  | nc -u -w1 127.0.0.1 5514
+```
+
+The file tailer attributes a line to an address found in the message, or to
+`127.0.0.1` — the line did come from this host. That has a consequence worth
+stating rather than hiding: the 30-second frequency rule counts per address, so
+a busy system log will trip it on loopback. That is the rule doing exactly what
+it says, and it is why real deployments scope rate rules by source type as well.
+
+The loghub **2k samples are committed** (~1.2 MB), so replay and the
+parsing-accuracy eval both run on a clean clone with nothing downloaded.
 
 ## Threat intelligence
 
@@ -215,7 +277,9 @@ recomputes something — which is the whole point.
 cd backend && .venv/bin/python -m pytest
 ```
 
-41 tests covering the HTTP contract, provenance constraints, concurrent writers against a live
+74 tests covering the HTTP contract, the four ingestion sources (including a real
+UDP datagram end to end, and a tailer surviving both rotation and in-place
+truncation), provenance constraints, concurrent writers against a live
 reader, retention (including that an alert-referenced event is never pruned and
 that lifetime counters do not fall when it runs), transaction rollback leaving a
 usable connection, restart durability, and every ledger tamper mode — event
