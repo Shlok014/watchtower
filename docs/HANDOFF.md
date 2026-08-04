@@ -1,136 +1,173 @@
-# Handoff — 2026-07-29
+# Handoff — 2026-08-04
 
 Where the rebuild stands, and exactly where to pick it up.
 
-The governing rule, which has driven every decision so far: **no number is
-reported unless it was measured, and anything not measured says so.** Several
-changes below exist only because that rule forced them.
+The governing rule, which has driven every decision: **no number is reported
+unless it was measured, and anything not measured says so.** Most of what
+follows exists because that rule forced it.
 
 ---
 
-## Done
+## The state in one line
 
-### Session 0 — genesis
-`~/Documents/watchtower`, private repo `github.com/Shlok014/watchtower`.
-Renamed from IRIS-SOC (it collided with the unrelated Sylox IRIS). Source-only
-import, so the first commit never contained `node_modules`, `.venv`, the
-examiner-facing docs, or — importantly — `frontend/public/favicon.svg` and
-`icons.svg`, which were the **Bolt.new logo and a Bluesky icon**, unreferenced
-leftovers that would have told any reviewer exactly how the project was made.
+Sessions 0–10 are done. **Session 11 (screenshots, masthead, going public) is
+all that remains**, and it needs a human — see "Pick up here".
 
-### Session 1 — every fabricated value replaced (merged, PR #1)
-A 137-agent adversarial audit confirmed **63 findings across 41 locations, 35
-fatal**, rejecting 68 others. Removed:
+Five pull requests are open and **stacked**, in this order:
 
-- `score + random.uniform(-0.04, 0.04)` under `# Randomness for realism`
-- `confidence = 0.80 + score*0.15 + noise`, floored at 0.80 so it could never
-  express doubt, displayed beside the score as if independent
-- `/api/retrain` fabricating an accuracy that rose ~1% per click — now `501`
-- `random.uniform` CPU and memory; six `random.randint` component latencies
-- the decorative ledger nonce, which was never even an input to the digest
+| PR | Branch | What |
+|---:|---|---|
+| [#3](https://github.com/Shlok014/watchtower/pull/3) | `refactor/package-layout` | Session 4 — the package split, `/api/v1`, config |
+| [#4](https://github.com/Shlok014/watchtower/pull/4) | `feat/real-log-sources` | Session 7 — syslog, file tail, dataset replay |
+| [#5](https://github.com/Shlok014/watchtower/pull/5) | `feat/real-detection-model` | Session 6b — versioned model, real retrain |
+| [#6](https://github.com/Shlok014/watchtower/pull/6) | `feat/soar-enforcement` | Session 8 — the closed loop |
+| [#7](https://github.com/Shlok014/watchtower/pull/7) | `feat/frontend-truthful-states` | Session 9 — the frontend truth pass |
 
-**IP reputation became real**: Tor Project bulk exit list + FireHOL level1,
-cached with a provenance manifest, every verdict citing its feed and fetch date.
+**Merge them in that order.** Each branch is based on the previous one, so the
+diff each PR shows against `main` includes its predecessors until they land.
+Squash-merging #3 first, then #4, and so on, produces a clean history.
 
-### Session 2 — SQLite (merged, PR #1)
-Four module-level lists that a background thread mutated while Flask handlers
-iterated them, with no lock. Now WAL-mode SQLite, one transaction per event.
-`/api/stats` went **13.0 ms → 1.63 ms** (it had been re-parsing every timestamp
-once per bucket, ~75,000 `fromisoformat` calls per request, every 2 seconds).
+---
 
-### Session 3 — tamper-evident ledger (merged, PR #2)
-Verification previously compared `prev_hash` against the previous `hash` — two
-strings in the same row — and never recomputed a digest from the data it claimed
-to protect. Now every digest is recomputed from the live event row, with five
-distinguished outcomes and a `cli ledger tamper` demo.
+## Done since the last handoff
 
-### Sessions 5–6 — real detection (on main)
-- `datasets/download.py` — loghub 2k samples and full HDFS_v1
-- `detection/parser.py` — Drain3 with HDFS block-id masking
-- `detection/features.py` — per-block template count vectors
-- `eval/parsing.py`, `eval/benchmark.py` → `docs/METRICS.md`
+### Session 4 — the 1,055-line module became a package
+`backend/watchtower/` with `config.py`, a `create_app()` factory, a blueprint at
+**`/api/v1`** and no unversioned alias. Two defaults changed, and both were
+security bugs rather than taste: `CORS(app)` allowed every origin against an
+unauthenticated API with a destructive `POST /reset`, and the server bound
+`0.0.0.0`, publishing that API to every machine on the network.
 
-**Completed on the full dataset** — 11,175,629 lines, 575,061 labelled blocks,
-45 mined templates, 168.6s to parse and featurise (66,273 lines/sec):
+**The CI honesty gate had never run and was wrong twice.** Actions has been
+refused for billing since the workflow landed, so nothing had executed it.
+`grep -rn .` emits `./`-prefixed paths under GNU grep and bare paths under BSD
+grep, which broke its own allowlist; and the retired-names check flagged the six
+lines of prose that *retire* them — "there is no proof-of-work, and it is not
+Hyperledger" is the honesty story. Replaced by
+`scripts/check_no_fabrication.py`, which strips comments and docstrings with
+`tokenize` before matching, and in prose flags only claim-shaped mentions.
+
+### Session 7 — four sources, one pipeline
+`syslog` (UDP, RFC 3164 + 5424, port 5514), `file:<path>` (inode-based rotation
+*and* in-place truncation), `replay:<hdfs|openssh>[@rate]`, and the synthetic
+generator. All four emit through the same `process_log`.
+
+Replay keeps the log's own timestamp in `ts_ms`; `ingested_ts_ms` is now. And it
+stays honest that **HDFS is a filesystem log** — lines keep their own level, and
+nothing maps `WARN` onto a threat. Measured: 167 replayed events, 0 alerts.
+
+`logger -n host -P port` is util-linux and **the BSD logger macOS ships rejects
+it**. The README gives the portable `nc` form.
+
+### Session 6b — the model became an artefact
+`POST /api/v1/retrain` refits on the frozen split, persists a version, and
+returns a real delta. Live: **`delta_f1: 0.0`** in 1.9 s against 575,061 blocks.
+Each version records seed, split indices, sklearn version, params and a SHA-256
+of the matrix it saw.
+
+Live block scoring during replay uses `parser.match()`, never `parse()`. **The
+published F1 does not transfer to those scores and every verdict says so.**
+
+Two latent CI failures fixed: `requirements.txt` had never gained numpy, scipy,
+scikit-learn, joblib or drain3; and a `--dataset sample` run overwrote
+`docs/METRICS.md` with a 2,200-block result.
+
+### Session 8 — SOAR closes the loop
+`block_ip` writes to a `blocklist` table the consumer checks **before**
+detection. Live: 12 events → 1 alert → block → **10 events really dropped**.
+YAML playbooks, `safe_load` only, unknown actions rejected at load. Status is
+earned: `contained` needs a required step with a real side effect.
+
+Two things the tests found: `dropped` had to go inside the ledger digest (which
+required per-block canon versioning, so old blocks still verify), and the ledger
+had to move **ahead of detection** so an incident report can cite the block
+covering its own triggering event.
+
+Schema 1 → 2 with a real migration runner, verified against a v1 database built
+from `origin/main`'s schema.
+
+### Session 9 — the dashboard stopped implying things
+The six-stage boot animation is gone. `LIVE` was a string literal; it is now
+LIVE/STALE/OFFLINE from the age of the last successful poll. The API client no
+longer swallows every error. Empty states distinguish "no data" from "no
+backend". `App.jsx` 662 lines → 16 components. **36 Vitest tests.**
+
+### Session 10 — tooling and the gates
+`make help` is the interface. `scripts/dev.sh` replaces `start.sh`, whose
+`lsof -ti:5001 | xargs kill -9` killed whatever owned the port — on a Mac where
+5001 is also AirPlay Receiver. CI gained Vitest, coverage (printed, **not**
+thresholded), and `scripts/check_detection_floor.py`.
+
+**The CI backend job was run end to end locally for the first time**, on a clean
+Python 3.13 venv installed only from `requirements.txt`: 128 tests, ruff, both
+gates, all green.
+
+---
+
+## Measured results
+
+Regenerated by `make bench` on the full dataset — 11,175,629 lines, 575,061
+labelled blocks, 45 templates, 108.3 s (103,181 lines/sec):
 
 | | Precision | Recall | F1 |
 |---|---:|---:|---:|
 | LogisticRegression | 0.9605 | 0.9998 | **0.9797** |
 | DecisionTree | 0.9986 | 0.9987 | **0.9986** |
-| IsolationForest (unsupervised) | 0.0774 | 0.0777 | **0.0775** |
+| IsolationForest (unsupervised) | 0.0639 | 0.0640 | **0.0640** |
 
 Parsing grouping accuracy: HDFS_2k **0.9975**, OpenSSH_2k **0.7180**.
 
-OpenSSH and IsolationForest are reported deliberately. Both are the unflattering
-number, and a results table containing only its best figures is not a results
-table.
+IsolationForest moved from 0.0775 and throughput from 66,273 lines/sec when the
+split definition was unified across the project. Both figures are this run's real
+measurements; nothing was hand-edited.
 
----
-
-### CI
-`.github/workflows/ci.yml` — two jobs, no matrix. Backend: ruff lint + format
-check, pytest, and a gate that **fails the build if `random.*` reappears outside
-the synthetic generator**, or if `Hyperledger` / `LogLM` / `IRIS-SOC` come back.
-Frontend: `npm ci`, lint, build. Ruff config added and applied (43 findings
-fixed, 27 files formatted); parsing accuracy, chain verification and all 31 tests
-confirmed unchanged afterwards.
-
-⚠️ **The first CI run failed for a billing reason, not a code one.** Both jobs
-were refused with *"The job was not started because recent account payments have
-failed or your spending limit needs to be increased."* Every step was verified
-locally instead — ruff clean, 31 tests green, `npm run lint` and `npm run build`
-clean. Two ways out: fix Actions billing under GitHub → Settings → Billing, or
-**make the repo public**, which gives unlimited free Actions minutes and is on
-the roadmap anyway. Do not put a CI badge in the README until a run is actually
-green — a red badge on the masthead is worse than no badge.
+Tests: **128 backend + 36 frontend**.
 
 ---
 
 ## Pick up here
 
-1. **Wire the trained model into a replay mode.** `detection/parser.py` has
-   a `match()` that classifies without minting new templates — inference must
-   use it, or an unseen line gets an id the model never trained on. The
-   dashboard's detection stays a rule engine; replay is where the model belongs.
-   Nothing currently persists a fitted model — add joblib serialisation when it
-   is wired in, so `/api/retrain` can return genuine before/after metrics.
-2. **Session 9, the frontend** — this is the gate on going public. `App.jsx` is
-   still ~640 lines holding ten components, `fetchJSON` still swallows every
-   error and skips `res.ok`, and there is no offline banner or stale-data
-   handling. The connection gate and the truthful health/pipeline states landed
-   in Session 1; the split and the error UI did not.
-3. **Sessions 7–8** — real ingestion sources (syslog listener, file tailer,
-   dataset replay) and a SOAR blocklist the pipeline actually enforces.
-4. **Session 11** — screenshots, the demo GIF, and the README masthead. Do this
-   last, so the images show the final UI.
+1. **Merge #3 → #4 → #5 → #6 → #7, in that order.** Nothing else can proceed
+   cleanly until they land.
 
-## Repo state
+2. **Session 11 — the showcase.** Needs a human at a browser:
+   - Screenshots of the dashboard (`make dev`, then the hero shot).
+   - Two GIFs: the attack → block → drop loop, and `make demo` (the tamper
+     demo). QuickTime → `ffmpeg` two-pass palette, under 6 MB each.
+   - README masthead: badge row, hero image, mermaid architecture diagram.
+   - GitHub About blurb, topics, social preview.
 
-Branch `main`, everything pushed. PR #1 (sessions 1–2) and PR #2 (session 3) are
-merged. The detection benchmark and CI went **directly onto main** rather than
-through a PR — a slip, not a decision; later sessions should go back to a branch
-per session, since the PR trail is part of what makes the history readable.
+   The Chrome extension was not connected during this run, so **no screenshot
+   was taken and none is claimed**.
+
+3. **Then flip the repo public.** This is deliberately left undone: it is
+   outward-facing and irreversible in the sense that matters, and it is the
+   owner's call. Going public also gives Actions free minutes, so **CI has still
+   never produced a green run** — do not add a CI badge until it has.
+
+---
 
 ## Do not regress
 
 - **`origin` is checked with `GLOB`, not `LIKE`.** SQLite's `LIKE` is ASCII
-  case-insensitive, so `LIKE 'replay:%'` also accepts `REPLAY:` — two spellings
-  of one provenance, and every `GROUP BY origin` under-counts.
-- **The ledger digest covers `ts_ms`, not the ISO string.** Hashing ISO on write
-  and reconstructing it from milliseconds on verify loses sub-millisecond
-  precision and reports a clean chain as entirely tampered. That bug is
-  invisible until verification actually recomputes something.
-- **Detection windows key on `ingested_ts_ms`.** Keying on event time means a
-  replayed 2008 dataset produces zero detections and a flat timeline while the
-  ingest counter climbs — indistinguishable from a quiet network.
-- **`auto_vacuum` must be set before the first `CREATE TABLE`.** Set afterwards
-  it is silently ignored and the file then only ever grows.
-- **Lifetime counters live in a table**, not `COUNT(*)`/`max(id)`, which fall
-  when retention prunes.
-- **FireHOL level1 contains RFC1918.** Address scope is classified *before* any
-  feed lookup, using an explicit range table — not `ipaddress.is_private`, which
-  CPython 3.13 changed for RFC 6598 space.
+  case-insensitive, so `LIKE 'replay:%'` also accepts `REPLAY:`.
+- **The ledger digest covers `ts_ms`, not the ISO string.**
+- **Each block verifies under the canon *it* records.** Adding a field to
+  `CANON_FIELDS` without a new canon version retroactively accuses every
+  historical block of tampering — and a false alarm is indistinguishable in the
+  output from a real one.
+- **Detection windows key on `ingested_ts_ms`,** and exclude `dropped` rows.
+- **The blocklist is checked before detection,** not after.
+- **`auto_vacuum` must be set before the first `CREATE TABLE`.**
+- **Lifetime counters live in a table**, not `COUNT(*)`/`max(id)`.
+- **FireHOL level1 contains RFC1918.** Classify address scope first, and never
+  with `ipaddress.is_private`.
 - **Unlisted addresses score 0.00.** Absence from a blocklist is not evidence.
+- **`schema.sql` is always the current schema**, so a fresh database skips every
+  migration. Migrations run only on older files, and each goes in one
+  transaction with its version stamp.
+- **A sample-dataset benchmark run must never write `docs/METRICS.md`.**
+- **`match()`, never `parse()`, at inference.**
 
 ## Open decisions
 
@@ -138,24 +175,20 @@ per session, since the PR trail is part of what makes the history readable.
   → ~48 MB/day at the generator's rate, ~1.7 GB/day at a 25 ev/s replay. Fine
   today; needs a policy before replay runs for any length of time.
 - **Real Tor exit addresses in screenshots.** The generator uses real Tor exits
-  for connection-provenance events and RFC 5737 documentation ranges for events
-  that fabricate forensic detail, so no invented malware accusation is printed
-  next to a real operator's address. Worth a second look before publishing
-  screenshots.
-- **The repo is still private.** The plan says go public once Sessions 0–6 and 9
-  are done; 9 (the frontend split and error states) has not been started. Going
-  public would also make CI run for free, so the two decisions are linked.
+  only for connection-provenance events and RFC 5737 ranges for events that
+  fabricate forensic detail. Worth a second look before publishing images.
+- **Blocklist TTLs** are per-playbook (900 s – 7200 s) and were chosen by
+  judgement, not measurement. Nothing depends on them being right.
 
 ## Environment notes
 
-- Python **3.14.1**, python.org framework build with **no CA bundle** — `urllib`
+- Python **3.14.1** locally, python.org build with **no CA bundle** — `urllib`
   raises `CERTIFICATE_VERIFY_FAILED` without `certifi`. Never "fixed" with
-  `ssl._create_unverified_context`; for a tool that decides which addresses are
-  hostile, letting someone swap the blocklist is worse than the fake table it
-  replaced.
-- numpy 2.5.1, scipy 1.18.0, scikit-learn 1.9.0, drain3 — all install cleanly on
-  3.14, which was the plan's top risk.
-- Zenodo record **8196385 returns 504**; record **3227177** works. The download
-  script tries both.
-- `backend/data/` (database, feeds, datasets) is git-ignored. Only the two
-  ~700 KB loghub samples are fetched by default.
+  `ssl._create_unverified_context`.
+- CI targets **3.12**; the local clean-install verification used **3.13**, which
+  is the closest interpreter on this machine.
+- `backend/data/` is git-ignored **except `data/samples/`**, which holds the
+  committed loghub 2k logs, their structured CSVs, and the label subset for the
+  blocks they contain (~1.3 MB total). That is what makes a clean clone
+  runnable, testable and benchmarkable with zero downloads.
+- Zenodo record **8196385 returns 504**; record **3227177** works.

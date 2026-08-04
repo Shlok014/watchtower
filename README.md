@@ -483,15 +483,32 @@ forever).
 ## Running it
 
 ```bash
-cd backend
-python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
-.venv/bin/python -m watchtower.threatintel.fetch   # optional; app runs without it
-.venv/bin/python -m watchtower run                 # :5001
-
-cd ../frontend && npm install && npm run dev   # :5173
+make setup     # both dependency trees
+make dev       # API on :5001, dashboard on :5173
 ```
 
-A one-command `make dev` replaces this shortly.
+`make help` lists everything. The ones worth knowing:
+
+| | |
+|---|---|
+| `make test` | 128 backend + 36 frontend |
+| `make lint` | ruff, eslint, and the honesty gate |
+| `make bench` | regenerate `docs/METRICS.md` from a real run |
+| `make demo` | verify the ledger, corrupt one event with raw SQL, verify again |
+| `make feeds` | refresh the cached threat feeds |
+| `make data` | download the full HDFS_v1 benchmark (~1.5 GB extracted) |
+
+`SOURCES=synthetic,syslog,replay:hdfs@25 make dev` picks the ingestion sources.
+
+`scripts/dev.sh` replaces the old `start.sh`, whose first line was
+`lsof -ti:5001 | xargs kill -9` — that kills whatever owns the port, not what
+this project started, on a Mac where 5001 is also AirPlay Receiver. The
+replacement only ever signals the two children it launched, and fails by name if
+the port is taken.
+
+**A clean clone needs no downloads.** The loghub 2k samples and their labels are
+committed, so `make test`, `make bench`'s parsing section, and `replay:hdfs` all
+work immediately.
 
 ## Layout
 

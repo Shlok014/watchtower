@@ -27,7 +27,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install pytest ruff
+          pip install pytest pytest-cov ruff
 
       - name: Lint
         working-directory: backend
@@ -39,7 +39,11 @@ jobs:
 
       - name: Tests
         working-directory: backend
-        run: python -m pytest -q
+        run: python -m pytest -q --cov=watchtower --cov-report=term-missing:skip-covered
+
+      # No coverage threshold. A number that has to be met gets met by writing
+      # tests that execute lines without asserting anything, which is the exact
+      # failure this project exists to remove. It is printed to be read.
 
       # The gate that protects the premise: no invented numbers, and no
       # re-adoption of the names the project retired. It lives in a script
@@ -50,6 +54,18 @@ jobs:
       # removed. See the script's docstring.
       - name: No fabricated values may return
         run: python scripts/check_no_fabrication.py
+
+      # A detection-regression gate that needs no downloads: the loghub 2k
+      # samples are committed. Drain's masking config is the most fragile thing
+      # in the detection path, and when it breaks nothing raises — the pipeline
+      # runs, the dashboard renders, and the feature vectors become noise.
+      #
+      # Floors only on parsing accuracy. A floor on the anomaly-detection F1
+      # would have to be set against a 2,200-block subset, which would either be
+      # meaningless or would quietly turn a subset result into a claim about the
+      # full benchmark.
+      - name: Detection regression floor
+        run: python scripts/check_detection_floor.py
 
   frontend:
     runs-on: ubuntu-latest
