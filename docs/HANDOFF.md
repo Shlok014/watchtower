@@ -1,4 +1,4 @@
-# Handoff — 2026-08-04
+# Handoff — 2026-08-05
 
 Where the rebuild stands, and exactly where to pick it up.
 
@@ -10,19 +10,52 @@ follows exists because that rule forced it.
 
 ## The state in one line
 
-Sessions 0–11 are done and **merged to `main`**, which is green: 136 backend
-tests, 43 frontend tests, ruff, eslint, and all four gates.
+**Everything is merged to `main`, which is clean and green.** No open pull
+requests, no uncommitted work, nothing running. 18 PRs merged.
 
-An adversarial review then ran over the merged result — twenty agents in
-throwaway clones, four lenses, every claim put to a separate agent whose job was
-to refute it. Sixteen claims, ten confirmed, all fixed; see "What the review
-found" below.
+    make lint    ruff · eslint · fabrication gate · published-numbers gate
+    make test    141 backend · 43 frontend
+    make perf    storage figures  →  docs/STORAGE.md
+    make bench   detection figures →  docs/METRICS.md
+    make demo    the tamper demo, which now restores the store afterwards
 
-**The repo stays private until the screenshots exist** — decided 2026-08-04.
-Publishing with a bare masthead was the alternative and was rejected; the images
-land first, then the flip. That also means **CI has still never produced a green
-run**, since Actions is refused for billing on a private repo. No CI badge until
-it has; the README carries a comment where the badge would go saying so.
+**Exactly one thing is left, and it needs a human at a browser:** screenshots and
+two demo GIFs, then flipping the repo public. The recipe is at the end of this
+file. The Chrome extension was never connected during any of this work, so no
+image exists and **none is referenced anywhere** — nothing is broken in the
+meantime.
+
+**The repo stays private until those images exist** — your decision, 2026-08-04.
+Publishing with a bare masthead was the alternative and was rejected. That also
+means **CI has still never produced a green run**, since Actions is refused for
+billing on a private repo; the whole backend job was reproduced locally instead,
+on a clean Python 3.13 install. No CI badge until a run is genuinely green, and
+the README carries a comment where the badge would go explaining why.
+
+## What happened after the sessions were merged
+
+The sessions themselves are summarised further down. Since then, four things —
+all of which found real defects:
+
+**The clean-clone gate** (the plan's stated final gate) — never run before, and
+it failed twice before passing. Four bugs, below.
+
+**An adversarial review** — 20 agents in throwaway clones, 4 lenses, every claim
+handed to a separate agent instructed to refute it. **16 raised, 10 confirmed.**
+The worst: a typo in a playbook YAML silently erased every alerting event, while
+the ledger still verified clean and health said "All systems operational".
+
+**A second review, of those fixes** — because moving the SOAR response out of the
+ingest transaction genuinely weakened atomicity. **6 raised, 4 confirmed**,
+including that the docstring written in round one was itself false.
+
+**A re-measurement of the storage figures** — three numbers hand-typed in the
+README since session 2 and never re-checked. One had moved by about half. They
+are generated now.
+
+If you take one process lesson from all of it: **review the fixes, not just the
+code.** Round two found a bug inside round one's fix that reviewing the original
+would never have surfaced.
 
 ## The clean-clone gate — run, and it found four bugs
 
@@ -120,7 +153,7 @@ And a flaky test, at a measured 0.54%: it drove `/simulate-attack`, whose
 brute_force burst draws randomly from a pool two thirds `failed_login` — which
 has no playbook and blocks nothing.
 
-## The one thing left## The one thing left: screenshots and GIFs
+## The one thing left: screenshots and GIFs
 
 Everything below needs a browser, which is why it is not done — the Chrome
 extension was not connected during the build. **No image is referenced anywhere
@@ -268,23 +301,46 @@ Tests: **141 backend + 43 frontend**.
 
 ## Pick up here
 
-1. **Merge #3 → #4 → #5 → #6 → #7, in that order.** Nothing else can proceed
-   cleanly until they land.
+Everything is merged. There is one task, and it is the last one.
 
-2. **Session 11 — the showcase.** Needs a human at a browser:
-   - Screenshots of the dashboard (`make dev`, then the hero shot).
-   - Two GIFs: the attack → block → drop loop, and `make demo` (the tamper
-     demo). QuickTime → `ffmpeg` two-pass palette, under 6 MB each.
-   - README masthead: badge row, hero image, mermaid architecture diagram.
-   - GitHub About blurb, topics, social preview.
+**1. Take the screenshots and the two GIFs.** The full recipe — what to capture,
+in what state, the `ffmpeg` two-pass palette invocation to keep each under 6 MB,
+and where the files go — is in "The one thing left" above. Roughly:
 
-   The Chrome extension was not connected during this run, so **no screenshot
-   was taken and none is claimed**.
+```bash
+make setup
+SOURCES=synthetic,replay:hdfs@20 make dev     # :5001 and :5173
+```
 
-3. **Then flip the repo public.** This is deliberately left undone: it is
-   outward-facing and irreversible in the sense that matters, and it is the
-   owner's call. Going public also gives Actions free minutes, so **CI has still
-   never produced a green run** — do not add a CI badge until it has.
+Let it run 30–60 seconds, fire a `⚡ Simulate Attack → Brute Force` so the
+Enforcement panel shows a real block with a non-zero drop count, then capture.
+
+**2. Add them to the README** under the masthead and in the Response section, and
+set `dashboard.png` as the GitHub social preview so the link unfurls on LinkedIn.
+
+**3. Flip the repo public.**
+
+```bash
+gh auth switch -u Shlok014      # NOT shlok-sylox — see Environment notes
+gh repo edit Shlok014/watchtower --visibility public \
+   --accept-visibility-change-consequences
+```
+
+**4. Watch the first Actions run.** Public repos get free minutes, so this will
+be the first time CI has ever executed. If it is green, add the badge — and only
+then. The README has a comment where it goes.
+
+### Before publishing
+
+The demo address pool draws **real Tor exit addresses** for connection-provenance
+events (`threatintel/pool.py`), so a screenshot could put a real relay operator's
+address beside a "suspicious IP" verdict. Events that fabricate forensic detail
+already use RFC 5737 ranges, and nothing in the repository itself contains a
+routable address — the feed cache is git-ignored — so this is a framing question
+about the images, not a code one.
+
+A pre-publish sweep found no secrets, no local paths, and no routable addresses
+outside documentation ranges.
 
 ---
 
@@ -309,6 +365,19 @@ Tests: **141 backend + 43 frontend**.
   transaction with its version stamp.
 - **A sample-dataset benchmark run must never write `docs/METRICS.md`.**
 - **`match()`, never `parse()`, at inference.**
+- **The SOAR response runs *after* the ingest transaction commits.** Putting it
+  back inside means a broken playbook rolls the event out of existence and a
+  slow webhook holds the single write lock. Both were reproduced.
+- **The execution row is written before the first action can have an effect.**
+  `block_ip` commits on its own connection; without the row first, a crash
+  leaves an address under enforcement beside an alert reading "open".
+- **A held partial line in the file tailer must expire.** Holding it
+  indefinitely lets `copytruncate` splice two files into one fabricated,
+  severity-classified record.
+- **Health distinguishes *finished* from *died*.** A replay reaching EOF is
+  success, not a fault.
+- **Storage and detection figures are generated, never typed.** `make perf` and
+  `make bench`; `scripts/check_published_numbers.py` fails the build on drift.
 
 ## Open decisions
 
@@ -335,3 +404,18 @@ Tests: **141 backend + 43 frontend**.
   blocks they contain (~1.3 MB total). That is what makes a clean clone
   runnable, testable and benchmarkable with zero downloads.
 - Zenodo record **8196385 returns 504**; record **3227177** works.
+- **`gh` has two accounts.** The repo is owned by `Shlok014` but `shlok-sylox` is
+  often the active one, and every repo command 404s until you switch. If a push
+  fails with "Repository not found", `gh auth switch -u shlok-sylox` then back to
+  `Shlok014` re-primes the git credential helper. This happened three times.
+- **`bash` on this Mac is 3.2.57** and always will be. `wait -n`, `declare -A`
+  and friends are unavailable; both scripts in `scripts/` are checked with
+  `/bin/bash -n`.
+- **Disk is tight: ~9 GB free.** `backend/data/datasets` is 1.7 GB (the full
+  HDFS_v1 download plus its zip). Deleting `HDFS_v1.zip` reclaims 178 MB safely;
+  deleting `HDFS.log` means `make bench` has to re-download before it can
+  regenerate the full-dataset page.
+- **Review subagents mutate the working tree.** `isolation: "worktree"` fails
+  here because the session's cwd is not a git repo, so they were each given a
+  throwaway `git clone` instead. Two of them also ran `rm -rf` over shared
+  `$TMPDIR` with wildcards. Never point them at this repo directly.
