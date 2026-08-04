@@ -312,9 +312,11 @@ Tests: **141 backend + 43 frontend**.
 
 ## Open decisions
 
-- **Ledger disk budget.** Append-only and exempt from retention: 838 bytes/block
-  → ~48 MB/day at the generator's rate, ~1.7 GB/day at a 25 ev/s replay. Fine
-  today; needs a policy before replay runs for any length of time.
+- **Ledger disk budget.** Append-only and exempt from retention. Re-measured by
+  `make perf` on a fresh database: **1,015 bytes/block**, about **2 GB/day** at a
+  25 ev/s replay. Up from the 838 published in session 2 because the digest now
+  covers `dropped` and each row records its `payload_canon`. Fine today; still
+  needs a policy before a replay runs for any length of time.
 - **Real Tor exit addresses in screenshots.** The generator uses real Tor exits
   only for connection-provenance events and RFC 5737 ranges for events that
   fabricate forensic detail. Worth a second look before publishing images.
