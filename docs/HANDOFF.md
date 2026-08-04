@@ -10,8 +10,13 @@ follows exists because that rule forced it.
 
 ## The state in one line
 
-Sessions 0–11 are done and **merged to `main`**, which is green: 128 backend
+Sessions 0–11 are done and **merged to `main`**, which is green: 136 backend
 tests, 43 frontend tests, ruff, eslint, and all four gates.
+
+An adversarial review then ran over the merged result — twenty agents in
+throwaway clones, four lenses, every claim put to a separate agent whose job was
+to refute it. Sixteen claims, ten confirmed, all fixed; see "What the review
+found" below.
 
 **The repo stays private until the screenshots exist** — decided 2026-08-04.
 Publishing with a bare masthead was the alternative and was rejected; the images
@@ -54,6 +59,38 @@ verified clean.
 `scripts/check_published_numbers.py` was added along the way: `docs/metrics.json`
 and `docs/METRICS.md` cannot disagree because one generates the other, but the
 README and this file are hand-written. 43 figures checked.
+
+## What the review found
+
+Twenty agents, four lenses, each in its own throwaway clone; every finding put
+to a separate agent instructed to refute it. **16 raised, 10 confirmed, 6
+refuted** (four of the six from the tests lens). All ten are fixed, with eight
+regression tests.
+
+The one that mattered: **a typo in a playbook silently erased every alerting
+event.** Playbook selection ran inside the ingest transaction, so `PlaybookError`
+rolled back the event row, its ledger block and the counter bump. Benign events
+stored normally; anomalous ones ceased to exist — and because SQLite reuses the
+rowids of a rolled-back transaction, `verify` saw no height gap and called the
+chain clean over a record set missing exactly the interesting traffic, while
+health said "All systems operational".
+
+Its sibling: the webhook's 3-second call ran inside `BEGIN IMMEDIATE`, so
+concurrent events died with "database is locked" and were never written.
+
+Both have one cause and one fix — **the response now runs after the ingest
+transaction commits.** Nothing that can fail or block belongs in a transaction
+holding the single write lock. Playbooks are also validated in `create_app`, so
+a typo refuses to start the app rather than surfacing at 3am.
+
+The rest: health read `any(alive)` so one dead source among several stayed
+green; feed freshness was computed once and frozen, so the "stale" branch could
+never fire; `housekeeping` was wired only into the synthetic source, so no real
+configuration ever pruned; the dashboard printed a hardcoded `0.45` threshold
+the API never sent; `/stats` returned the synthetic generator's hostnames so the
+source filter matched nothing under a real source; the file tailer emitted half
+a line as a finished event; and a 200-event window was charted beside a lifetime
+stat card with nothing saying why.
 
 ## The one thing left## The one thing left: screenshots and GIFs
 
@@ -175,7 +212,7 @@ backend". `App.jsx` 662 lines → 16 components. **43 Vitest tests**, including 
 thresholded), and `scripts/check_detection_floor.py`.
 
 **The CI backend job was run end to end locally for the first time**, on a clean
-Python 3.13 venv installed only from `requirements.txt`: 128 tests, ruff, both
+Python 3.13 venv installed only from `requirements.txt`: the full suite, ruff, both
 gates, all green.
 
 ---
