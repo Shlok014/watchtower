@@ -20,15 +20,15 @@ this is.
 
 ## Anomaly detection
 
-**Dataset:** loghub HDFS_v1 (full) — 11,175,629 lines, 575,061 labelled blocks, 16,838 anomalous (2.93%), 45 mined templates.
+**Dataset:** loghub HDFS_v1 (full, 11.2M lines) — 11,175,629 lines, 575,061 labelled blocks, 16,838 anomalous (2.93%), 45 mined templates.
 
 **Split:** stratified 50/50, seed 42 — 287,530 train / 287,531 held out.
 
 | Model | Supervised | Precision | Recall | F1 | ROC-AUC | Fit (s) |
 |---|---|---:|---:|---:|---:|---:|
-| LogisticRegression | yes | 0.9605 | 0.9998 | **0.9797** | 0.9994 | 2.21 |
-| DecisionTree | yes | 0.9986 | 0.9987 | **0.9986** | 0.9996 | 0.61 |
-| IsolationForest | no | 0.0774 | 0.0777 | **0.0775** | 0.7141 | 2.39 |
+| LogisticRegression | yes | 0.9605 | 0.9998 | **0.9797** | 0.9994 | 1.087 |
+| DecisionTree | yes | 0.9986 | 0.9987 | **0.9986** | 0.9996 | 0.4 |
+| IsolationForest | no | 0.0639 | 0.0640 | **0.0640** | 0.7014 | 0.83 |
 
 Confusion matrix for DecisionTree on the held-out half: TP 8,408 · FP 12 · FN 11 · TN 279,100
 
@@ -44,11 +44,31 @@ Confusion matrix for DecisionTree on the held-out half: TP 8,408 · FP 12 · FN 
 - These results describe **HDFS**, not the synthetic stream the dashboard
   shows by default. The two are separate: the dashboard's detection is a
   rule engine, and this page does not claim otherwise.
+- Every figure above is measured on **complete blocks**. Live replay scores
+  blocks as their lines arrive, which is a strictly harder problem — the
+  same model, a different question. No accuracy is claimed for that, and
+  `/api/v1/model` says so on every verdict it returns.
+
+## The persisted model
+
+The LogisticRegression row above is **version 1** on disk,
+fitted and evaluated by the same code path `POST /api/v1/retrain` runs, so the
+number published here and the number the running system reports are the same
+one by construction. Each version records its seed, split indices, sklearn
+version, parameters and a SHA-256 of the exact feature matrix it saw.
+
+Retraining on unchanged data returns a delta of exactly 0.0000. The endpoint
+this replaced returned a figure that rose about a point per button press and
+could never fall.
 
 ## Pipeline
 
-| Parse + featurise | 66,273 lines/sec (168.6s for 11,175,629 lines) |
+| Parse + featurise | 103,181 lines/sec (108.3s for 11,175,629 lines) |
 |---|---|
+
+Timed on the run that built the cached feature matrix, not on this
+invocation — this one reused the cache and did no parsing at all.
+
 
 ## Environment
 

@@ -25,7 +25,7 @@ and a SHA-256 hash-chained audit ledger — Flask + React.**
 | Normalization | Severity and event-type classification | ✅ real |
 | **IP reputation** | Live lookup against the **Tor Project bulk exit list** (1,380 entries) and **FireHOL level1** (4,580 CIDRs), cached locally with a provenance manifest. Every verdict names its feed and fetch date. Non-routable addresses short-circuit before the lookup. | ✅ **real, measured** |
 | Detection (live dashboard) | Sliding-window features (failed logins/60s, event rate/30s) + reputation, weighted. Deterministic: identical input and window state give an identical score. Versioned by the hash of the weights themselves. | ✅ real rules — **not** ML, and not called ML |
-| **Detection (benchmark)** | **Drain3 template mining → per-block count vectors → scikit-learn**, measured on the full HDFS_v1 benchmark. Separate from the live dashboard, and [docs/METRICS.md](docs/METRICS.md) says so. | ✅ **real, measured** |
+| **Detection (model)** | **Drain3 template mining → per-block count vectors → scikit-learn**, measured on the full HDFS_v1 benchmark and persisted as a versioned artefact. `POST /api/v1/retrain` refits it and returns a real delta — 0.0000 on unchanged data. Live replay scores partial blocks and never borrows the benchmark's F1. | ✅ **real, measured, versioned** |
 | Alerting | Threshold 0.45, every alert carries the rules that fired and their evidence | ✅ real |
 | SOAR | Playbook *selection* is real; steps are labelled `selected`, `executed: false`, and nothing is contacted | ⚠️ no integrations — and the UI says so |
 | **Audit ledger** | **Tamper-evident.** Every digest is recomputed from the live event row on verify, and the header digest covers height, timestamp, prev_hash and payload — so editing an event, rewriting a block, back-dating one, or deleting one is all detected and distinguished. | ✅ **real** |
@@ -172,9 +172,9 @@ blocks (2.93% anomalous), 45 mined templates, stratified 50/50 split at seed 42:
 |---|---|---:|---:|---:|---:|
 | LogisticRegression | yes | 0.9605 | 0.9998 | **0.9797** | 0.9994 |
 | DecisionTree | yes | 0.9986 | 0.9987 | **0.9986** | 0.9996 |
-| IsolationForest | no | 0.0774 | 0.0777 | **0.0775** | 0.7141 |
+| IsolationForest | no | 0.0639 | 0.0640 | **0.0640** | 0.7014 |
 
-Pipeline throughput: **66,273 lines/sec** end to end (168.6s to parse and
+Pipeline throughput: **103,181 lines/sec** end to end (108.3s to parse and
 featurise 11.2M lines).
 
 Three things worth saying plainly rather than letting the table imply otherwise:
@@ -183,7 +183,7 @@ Three things worth saying plainly rather than letting the table imply otherwise:
   vectors is the expected result here and matches published loglizer baselines.
   It is not evidence of anything novel in this repo.
 * **The unsupervised row is bad, and it is the honest one.** IsolationForest gets
-  0.0775 — that is the real cost of having no labels, which is exactly the
+  0.0640 — that is the real cost of having no labels, which is exactly the
   situation the live dashboard is in.
 * **These results are about HDFS, not the dashboard.** The live stream is
   synthetic and its detection is a rule engine. The two are deliberately
@@ -192,6 +192,46 @@ Three things worth saying plainly rather than letting the table imply otherwise:
 Both the OpenSSH row and the IsolationForest row could have been quietly
 omitted. They are here because a results table that only contains its best
 numbers is not a results table.
+
+### The model is a versioned artefact, not a script output
+
+The LogisticRegression row is a real file on disk, and `POST /api/v1/retrain`
+refits it, evaluates it on the same frozen held-out half, and returns what
+changed. Each version records its seed, its split indices, its sklearn version,
+its parameters, and a SHA-256 of the exact feature matrix it saw.
+
+```
+$ curl -X POST localhost:5001/api/v1/retrain
+  version: 2      fit_seconds: 1.106      total_seconds: 1.87
+  metrics:      f1 0.9797  precision 0.9605  recall 0.9998
+  prev_metrics: f1 0.9797  precision 0.9605  recall 0.9998
+  delta_f1: 0.0
+```
+
+**`delta_f1: 0.0`** is the point. Retraining on unchanged data changes nothing,
+and the endpoint says so. What it replaced returned
+`0.90 + (version - 2) * 0.01 + random.uniform(0, 0.02)` — an accuracy that rose
+about a point per button press and could never fall — under a docstring reading
+`"""Fake model retraining endpoint."""`.
+
+Retraining takes under two seconds against 575,061 blocks because the feature
+matrix is cached alongside the template ids that define its columns. The two are
+meaningless apart: re-parsing would re-mine the templates, and the column space
+would shift underneath two models that are supposed to be comparable.
+
+### The model in the live pipeline
+
+`--sources replay:hdfs` scores blocks as their lines arrive, using
+`parser.match()` — never `parse()`, which would mint a template for an unseen
+line and hand the model a column index that means nothing.
+
+**The published F1 does not transfer to those scores, and `/api/v1/model` says
+so on every verdict it returns.** It was measured on complete blocks; scoring a
+block that is three lines old is the same model answering a harder question. So
+that endpoint reports a probability, the number of lines behind it, the observed
+min/median/max of recent scores, and how many lines matched no template at all —
+a rising unmatched rate being the honest signal that the miner has drifted. No
+accuracy is claimed for live scoring anywhere.
 
 ## Storage
 
@@ -277,9 +317,10 @@ recomputes something — which is the whole point.
 cd backend && .venv/bin/python -m pytest
 ```
 
-74 tests covering the HTTP contract, the four ingestion sources (including a real
+96 tests covering the HTTP contract, the four ingestion sources (including a real
 UDP datagram end to end, and a tailer surviving both rotation and in-place
-truncation), provenance constraints, concurrent writers against a live
+truncation), model versioning and the zero-delta retrain, bounded live block
+scoring, provenance constraints, concurrent writers against a live
 reader, retention (including that an alert-referenced event is never pruned and
 that lifetime counters do not fall when it runs), transaction rollback leaving a
 usable connection, restart durability, and every ledger tamper mode — event

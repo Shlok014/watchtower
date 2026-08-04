@@ -26,4 +26,10 @@ testpaths = ["backend/tests"]
 # which makes "works on my machine" depend on which of the two you typed.
 pythonpath = ["backend"]
 # Quiet the third-party DeprecationWarnings that drown out our own.
-filterwarnings = ["ignore::DeprecationWarning:drain3.*"]
+filterwarnings = [
+    "ignore::DeprecationWarning:drain3.*",
+    # joblib sets .shape on a loaded array; numpy 2.5 deprecated that. Third
+    # party, and it drowns out warnings from this codebase, which are the ones
+    # worth reading.
+    "ignore::DeprecationWarning:joblib.*",
+]

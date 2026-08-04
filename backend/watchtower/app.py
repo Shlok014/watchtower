@@ -12,6 +12,7 @@ from flask_cors import CORS
 
 from . import config, runtime, threatintel
 from .api.routes import bp as api_bp
+from .detect import stream
 from .sources import synthetic
 from .store import db as store_db
 
@@ -48,6 +49,11 @@ def create_app(cfg: config.Config | None = None, start_sources: bool = True) -> 
 
     store_db.connect()  # creates/validates the schema once
     synthetic.refresh_ip_pools()
+    # Load the newest trained model if there is one. Absence is normal on a
+    # clean clone and is reported through /api/v1/model rather than logged and
+    # forgotten — "no model" and "a model that silently failed to load" have to
+    # be distinguishable from outside the process.
+    stream.enable()
     if start_sources:
         runtime.start(cfg.sources)
     return app

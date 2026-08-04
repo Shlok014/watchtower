@@ -10,7 +10,7 @@ only discover it by rendering an empty cell.
 from flask import Blueprint, abort, jsonify, request
 
 from .. import config, ledger, runtime, telemetry, threatintel
-from ..detect import rules
+from ..detect import model, rules, stream, train
 from ..pipeline.consumer import process_log
 from ..sources import synthetic
 from ..store import db as store_db
@@ -174,7 +174,7 @@ def simulate_attack():
 
 @bp.route("/retrain", methods=["POST"])
 def retrain_model():
-    """Not implemented — there is no model wired into the live pipeline.
+    """Refit the detector on the frozen split and report what actually changed.
 
     This endpoint used to increment a counter and return ``previous_accuracy``,
     ``new_accuracy``, ``improvement`` and an ``epochs`` count, all synthesised
@@ -183,25 +183,62 @@ def retrain_model():
     endpoint." The dashboard rendered the result as a toast reading "Model
     retrained on N samples — +1.31% improvement".
 
-    Live detection is a rule set, versioned by the hash of its own weights. A
-    trained model and a real evaluation against a labelled benchmark exist in
-    ``eval/``; until one is wired into this process, this returns 501 rather
-    than a number.
+    What it returns now is measured on the held-out half of a frozen stratified
+    split, and ``delta_f1`` is genuinely 0.0 when the data has not changed —
+    which is the honest result of retraining on identical inputs, and the single
+    clearest sign that the number is real.
     """
-    version = rules.ruleset_version()
+    try:
+        entry = train.retrain(
+            rebuild=bool((request.json or {}).get("rebuild")) if request.is_json else False
+        )
+    except FileNotFoundError as exc:
+        return jsonify(
+            {
+                "status": "no_data",
+                "error": "No labelled dataset is available to train on.",
+                "detail": str(exc),
+            }
+        ), 503
+    except ValueError as exc:
+        return jsonify({"status": "refused", "error": str(exc)}), 422
+
+    # A newly trained model becomes the one live scoring uses. Leaving the old
+    # one loaded would mean the API reporting version N while every score came
+    # from N-1.
+    stream.enable()
+    return jsonify({"status": "trained", **entry})
+
+
+@bp.route("/model", methods=["GET"])
+def model_status():
+    """The trained detector: which version, on what data, scoring what.
+
+    Separate from ``/system-health`` because the two answer different questions,
+    and because the live dashboard's detection is the *rule engine* — the model
+    scores replayed HDFS blocks. Conflating them is how "our AI detected this"
+    gets said about a weighted sum.
+    """
+    entry = model.latest_entry()
+    scorer = stream.get()
     return jsonify(
         {
-            "status": "not_implemented",
-            "error": "No trainable model is wired into the live pipeline.",
-            "detail": (
-                f"Detection is a rule set versioned by content hash ({version}); "
-                "changing it means editing the weights, not retraining. Accuracy "
-                "figures will appear here once a model is trained and evaluated "
-                "against a labelled dataset."
-            ),
-            "ruleset_version": version,
+            "trained": entry is not None,
+            "current": entry,
+            "history": model.history()[:10],
+            "live_scoring": scorer.stats() if scorer else None,
+            "live_scoring_error": stream.load_error(),
+            "recent_verdicts": (scorer.recent[-20:] if scorer else []),
+            "rules": {
+                "ruleset_version": rules.ruleset_version(),
+                "threshold": rules.threshold(),
+                "note": (
+                    "The live dashboard's detection is this rule set, not the "
+                    "trained model. The model scores replayed HDFS blocks."
+                ),
+            },
         }
-    ), 501
+    )
 
 
 @bp.route("/reset", methods=["POST"])

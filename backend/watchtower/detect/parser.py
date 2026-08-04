@@ -54,16 +54,28 @@ def build_config() -> TemplateMinerConfig:
     return cfg
 
 
+def state_path(stream: str) -> Path:
+    return state_dir() / f"drain3_{stream}.bin"
+
+
 class LogParser:
     """Thin wrapper around drain3.TemplateMiner with per-stream persistence."""
 
-    def __init__(self, stream: str = "live", persist: bool = True):
+    def __init__(self, stream: str = "live", persist: bool = True, reset: bool = False):
         self.stream = stream
+        self.persist = persist
         cfg = build_config()
         if persist:
             d = state_dir()
             d.mkdir(parents=True, exist_ok=True)
-            store = FilePersistence(str(d / f"drain3_{stream}.bin"))
+            path = state_path(stream)
+            if reset and path.exists():
+                # A benchmark run must start from an empty miner. Continuing
+                # from a previous run's state mines templates on top of
+                # templates, so the column count drifts between runs and two
+                # models that are supposed to be comparable are not.
+                path.unlink()
+            store = FilePersistence(str(path))
             self.miner = TemplateMiner(store, config=cfg)
         else:
             self.miner = TemplateMiner(config=cfg)
@@ -78,9 +90,22 @@ class LogParser:
 
         Used at scoring time: inventing a template for an unseen line at
         inference would give it an id the model has never been trained on.
+
+        ``full_search_strategy="fallback"`` rather than drain3's default of
+        "never". The default walks the prefix tree only, so a known line whose
+        token count puts it down a different branch returns no match at all —
+        and an unmatched line is indistinguishable, downstream, from a line the
+        model has genuinely never seen. The fallback is a linear scan over the
+        clusters, which is affordable at these template counts (tens, not
+        thousands) and is only reached when the tree lookup already failed.
         """
-        cluster = self.miner.match(message)
+        cluster = self.miner.match(message, full_search_strategy="fallback")
         return (cluster.cluster_id, cluster.get_template()) if cluster else (None, None)
+
+    def save(self, reason: str = "explicit") -> None:
+        """Flush miner state to disk. No-op for a non-persistent parser."""
+        if self.persist:
+            self.miner.save_state(reason)
 
     @property
     def template_count(self) -> int:

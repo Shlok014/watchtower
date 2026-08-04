@@ -1,9 +1,29 @@
 # Runtime
 flask==3.1.1
 flask-cors==5.0.1
+
 # Used only by threatintel.fetch, for TLS trust. python.org macOS builds ship no
 # CA bundle until Install Certificates.command is run, so urlopen fails with
 # CERTIFICATE_VERIFY_FAILED out of the box. Verification is never disabled — an
 # unverified context would let anyone substitute the blocklist this tool uses to
 # decide which addresses are hostile.
 certifi>=2026.1.1
+
+# Detection. These arrived with the benchmark in session 5 and were never added
+# here — the app imports numpy at startup now (detect.stream), so a fresh
+# install from this file would have crashed on boot and CI would have failed at
+# collection. It went unnoticed because Actions has been refused for billing
+# since the workflow landed, so nothing has ever installed from this file.
+#
+# Pinned to the versions every published number was produced with. Each saved
+# model records its sklearn version for the same reason: a metric is only
+# reproducible against the library that computed it.
+numpy==2.5.1
+scipy==1.18.0
+scikit-learn==1.9.0
+joblib==1.5.3
+drain3==0.9.11
+
+# Deliberately absent: pandas (csv and Counter are enough here, and it is 60 MB
+# of dependency for two loops), and any deep-learning framework. Both are
+# roadmap lines, not dependencies.
