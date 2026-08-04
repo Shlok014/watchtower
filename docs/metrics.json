@@ -27,7 +27,7 @@
   "models": {
     "LogisticRegression": {
       "supervised": true,
-      "fit_seconds": 1.087,
+      "fit_seconds": 1.502,
       "persisted_version": 1,
       "precision": 0.9605,
       "recall": 0.9998,
@@ -40,7 +40,7 @@
     },
     "DecisionTree": {
       "supervised": true,
-      "fit_seconds": 0.4,
+      "fit_seconds": 0.47,
       "precision": 0.9986,
       "recall": 0.9987,
       "f1": 0.9986,
@@ -52,7 +52,7 @@
     },
     "IsolationForest": {
       "supervised": false,
-      "fit_seconds": 0.83,
+      "fit_seconds": 0.82,
       "precision": 0.0639,
       "recall": 0.064,
       "f1": 0.064,
