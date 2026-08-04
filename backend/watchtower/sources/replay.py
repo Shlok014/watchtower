@@ -197,6 +197,10 @@ def resolve_path(dataset: str):
 class ReplaySource(ThreadedSource):
     """Stream a real log file through the live pipeline at a fixed rate."""
 
+    # A file has an end. Reaching it is success, and health says so rather than
+    # reporting a permanent fault over a job that did what it was asked.
+    finite = True
+
     def __init__(self, dataset: str = "hdfs", speed: float = 20.0, limit: int | None = None):
         super().__init__()
         if dataset not in DATASETS:

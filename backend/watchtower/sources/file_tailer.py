@@ -111,14 +111,25 @@ class FileTailSource(ThreadedSource):
 
     origin = "file"
 
-    def __init__(self, path: str, from_start: bool = False, poll_interval: float = 0.5):
+    def __init__(
+        self,
+        path: str,
+        from_start: bool = False,
+        poll_interval: float = 0.5,
+        pending_timeout: float = 2.0,
+        max_pending_bytes: int = 1 << 20,
+    ):
         super().__init__()
         self.path = str(path)
         self.name = f"file:{self.path}"
         self.from_start = from_start
         self.poll_interval = poll_interval
+        # How long an unterminated line may wait for its newline. See run().
+        self.pending_timeout = pending_timeout
+        self.max_pending_bytes = max_pending_bytes
         self.lines_read = 0
         self.rotations = 0
+        self.discarded_partials = 0
 
     def _open(self):
         # SIM115 (no context manager) is suppressed on purpose here and below.
@@ -147,22 +158,59 @@ class FileTailSource(ThreadedSource):
             raise FileNotFoundError(f"cannot tail {self.path}: no such file")
 
         fh, ident = self._open()
-        # Partial reads are held here until their newline arrives. `readline()`
-        # at the end of a file returns whatever bytes exist, newline or not — so
-        # catching a writer mid-line split one log line into two events, the
-        # first with whatever address happened to be in the first half and a
-        # severity classified from half a message, the second unparseable and
-        # attributed to loopback. Both were then chained into the ledger as
-        # facts.
+
+        # An unterminated line waits here for its newline — `readline()` returns
+        # whatever bytes exist at EOF, and emitting half a line as a finished
+        # event splits one record into two, the first with whatever address was
+        # in its first half.
+        #
+        # But holding it indefinitely is worse than the problem it solves.
+        # `copytruncate` (and `cp /dev/null file`) truncates in place; if the
+        # writer refills past the old offset before the next poll, the size
+        # check cannot see it, and `pending += chunk` glues the head of the old
+        # file's last line onto the tail of the new file's first line. The
+        # result is a single well-formed record whose text never existed in any
+        # file — attributed, severity-classified from words that came from the
+        # other file, and chained into the ledger as fact. That is strictly
+        # worse than two obviously-broken fragments.
+        #
+        # So a partial line is held for at most `pending_timeout`, and dropped
+        # with a warning if it does not complete. Losing a fragment is a known,
+        # counted loss. Fabricating a convincing record is not.
         pending = ""
+        pending_since = 0.0
         try:
             while not self.stopping:
+                # Checked every iteration, not only at EOF: the sooner a
+                # truncation is seen, the smaller the window in which bytes
+                # could be spliced onto a held fragment.
+                if self._rotated(ident, fh):
+                    self.rotations += 1
+                    pending = self._drop_pending(pending, "the file rotated or was truncated")
+                    fh.close()
+                    for _ in range(20):
+                        if Path(self.path).exists():
+                            break
+                        time.sleep(0.1)
+                    fh = open(self.path, encoding="utf-8", errors="replace")  # noqa: SIM115
+                    st = os.fstat(fh.fileno())
+                    ident = (st.st_dev, st.st_ino)
+                    print(f"🔄 {self.path} rotated — reopened")
+                    continue
+
                 chunk = fh.readline()
                 if chunk:
+                    if not pending:
+                        pending_since = time.monotonic()
                     pending += chunk
+                    if len(pending) > self.max_pending_bytes:
+                        # A writer emitting megabytes without a newline is not
+                        # producing log lines, and buffering it is a leak.
+                        pending = self._drop_pending(
+                            pending, f"it passed {self.max_pending_bytes} bytes with no newline"
+                        )
+                        continue
                     if not pending.endswith("\n"):
-                        # Mid-line. Wait for the rest rather than inventing an
-                        # event out of half of one.
                         continue
                     line, pending = pending, ""
                     self.lines_read += 1
@@ -174,31 +222,29 @@ class FileTailSource(ThreadedSource):
                             print(f"⚠️  file tail pipeline error: {type(exc).__name__}: {exc}")
                     continue
 
-                if self._rotated(ident, fh):
-                    self.rotations += 1
-                    fh.close()
-                    # The new file is read from its start: its first lines are
-                    # new events, not history already seen.
-                    for _ in range(20):
-                        if Path(self.path).exists():
-                            break
-                        time.sleep(0.1)
-                    fh = open(self.path, encoding="utf-8", errors="replace")  # noqa: SIM115
-                    st = os.fstat(fh.fileno())
-                    ident = (st.st_dev, st.st_ino)
-                    # A half-line from the old file can never be completed.
-                    if pending:
-                        print(
-                            f"⚠️  {self.path}: discarding {len(pending)} bytes of an "
-                            "incomplete line left by the rotation"
-                        )
-                        pending = ""
-                    print(f"🔄 {self.path} rotated — reopened")
-                    continue
+                if pending and (time.monotonic() - pending_since) > self.pending_timeout:
+                    pending = self._drop_pending(
+                        pending, f"no newline arrived within {self.pending_timeout}s"
+                    )
 
                 time.sleep(self.poll_interval)
         finally:
             fh.close()
 
+    def _drop_pending(self, pending: str, why: str) -> str:
+        """Discard a held fragment, loudly and countably."""
+        if pending:
+            self.discarded_partials += 1
+            print(
+                f"⚠️  {self.path}: discarding {len(pending)} bytes of an incomplete "
+                f"line — {why}"
+            )
+        return ""
+
     def stats(self) -> dict:
-        return {"path": self.path, "lines_read": self.lines_read, "rotations": self.rotations}
+        return {
+            "path": self.path,
+            "lines_read": self.lines_read,
+            "rotations": self.rotations,
+            "discarded_partials": self.discarded_partials,
+        }

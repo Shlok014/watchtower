@@ -110,7 +110,20 @@ def dead() -> list[str]:
     most expensive wrong answer the system can give — and then the health
     endpoint gave it.
     """
-    return [spec for spec, s in running().items() if not s.alive()]
+    return [
+        spec
+        for spec, s in running().items()
+        if not s.alive() and not getattr(s, "completed", False)
+    ]
+
+
+def finished() -> list[str]:
+    """Sources that ran to completion. A replay reaching EOF is not a fault."""
+    return [
+        spec
+        for spec, s in running().items()
+        if not s.alive() and getattr(s, "completed", False)
+    ]
 
 
 def never_started(configured: tuple[str, ...] | None = None) -> list[str]:
@@ -128,6 +141,7 @@ def status() -> list[dict]:
             "name": getattr(s, "name", spec),
             "origin": getattr(s, "origin", spec),
             "alive": s.alive(),
+            "completed": bool(getattr(s, "completed", False)),
         }
         # Sources report their own counters. A replay that has finished its file
         # is not alive and should say how much it processed, not vanish.

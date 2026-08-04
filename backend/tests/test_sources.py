@@ -341,3 +341,62 @@ def test_tailer_waits_for_the_newline_before_emitting(tmp_path):
         assert seen[0]["ip"] == "10.0.0.9"
     finally:
         src.stop()
+
+
+def test_a_stale_partial_line_is_dropped_not_spliced(tmp_path):
+    """The fix for partial lines made a worse bug possible, and this pins it shut.
+
+    `copytruncate` truncates in place while an unterminated line is held. If the
+    writer refills past the old offset before the next poll, the size check
+    cannot see it, and appending would glue the head of the old file's last line
+    onto the tail of the new file's first line — producing one well-formed,
+    attributed, severity-classified record whose text never existed in any file.
+    Strictly worse than the two broken fragments it replaced.
+
+    A held fragment therefore expires. Losing it is a counted loss; fabricating
+    a convincing record is not.
+    """
+    log = tmp_path / "app.log"
+    log.write_text("")
+    src = file_tailer.FileTailSource(str(log), poll_interval=0.05, pending_timeout=0.3)
+    seen = []
+    src.start(seen.append)
+    time.sleep(0.2)
+    try:
+        with open(log, "a") as fh:
+            fh.write("Aug  4 21:09:20 web01 sshd[1]: partial from OLD file")
+            fh.flush()
+        time.sleep(0.8)  # past pending_timeout
+        assert seen == [], "the fragment was emitted as a finished event"
+        assert src.discarded_partials == 1, "the fragment was not dropped"
+
+        # What arrives next must stand alone, not be glued onto the fragment.
+        with open(log, "a") as fh:
+            fh.write("ation failure for root\n")
+            fh.flush()
+        assert _tail_until(src, seen, 1)
+        assert "partial from OLD file" not in seen[0]["message"], "two files were spliced"
+    finally:
+        src.stop()
+
+
+def test_a_writer_that_never_emits_a_newline_cannot_exhaust_memory(tmp_path):
+    log = tmp_path / "app.log"
+    log.write_text("")
+    src = file_tailer.FileTailSource(
+        str(log), poll_interval=0.05, pending_timeout=30, max_pending_bytes=2048
+    )
+    seen = []
+    src.start(seen.append)
+    time.sleep(0.2)
+    try:
+        with open(log, "a") as fh:
+            fh.write("x" * 5000)
+            fh.flush()
+        deadline = time.monotonic() + 3
+        while src.discarded_partials == 0 and time.monotonic() < deadline:
+            time.sleep(0.05)
+        assert src.discarded_partials >= 1, "the buffer grew past its cap unchecked"
+        assert seen == []
+    finally:
+        src.stop()

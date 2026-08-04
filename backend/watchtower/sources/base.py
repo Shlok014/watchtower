@@ -38,9 +38,15 @@ class ThreadedSource:
     name = "unnamed"
     origin = "synthetic"
 
+    #: A source whose work is inherently finite (a dataset replay) sets this
+    #: when it reaches the end. "Finished" and "died" are different facts, and
+    #: health must not paint the first as a fault.
+    finite = False
+
     def __init__(self) -> None:
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
+        self.completed = False
 
     def start(self, emit) -> threading.Thread:
         if self._thread is not None:
@@ -54,6 +60,8 @@ class ThreadedSource:
     def _guarded_run(self, emit) -> None:
         try:
             self.run(emit)
+            # Returned without raising: the work is done, not broken.
+            self.completed = True
         except Exception as exc:
             # A source that dies must say so. The old generator loop swallowed
             # everything, so a persistent failure looked exactly like a quiet
