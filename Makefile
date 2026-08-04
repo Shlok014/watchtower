@@ -11,6 +11,17 @@
 SHELL   := /bin/bash
 PY      := backend/.venv/bin/python
 PIP     := backend/.venv/bin/pip
+
+# The application package lives at backend/watchtower, but every recipe runs
+# from the repository root, so `python -m watchtower` could not import it:
+# `python -m` puts the *current directory* on sys.path, and that is the root.
+# Five targets — dev, backend, feeds, verify, demo — failed with "No module
+# named watchtower". Only test, lint and bench worked, because pytest gets its
+# path from pyproject.toml and bench cds into backend first.
+#
+# Exported once here rather than a `cd backend &&` in front of five recipes,
+# which is the version that goes wrong when the sixth is added.
+export PYTHONPATH := $(CURDIR)/backend
 PORT    ?= 5001
 SOURCES ?= synthetic
 
