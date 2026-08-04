@@ -338,7 +338,7 @@ def _component_health():
     for each, so the panel reported a healthy system even with the generator
     thread dead and nothing being processed.
     """
-    alive = runtime.any_alive()
+    alive = runtime.any_alive() or bool(runtime.finished())
     stopped = runtime.dead() + runtime.never_started()
     gen_status = "running" if alive and not stopped else "stopped" if not alive else "degraded"
     c = repos.counters()
@@ -380,7 +380,11 @@ def _component_health():
             stage(
                 "SOAR Engine",
                 "🤖",
-                "alert",
+                # "respond", not "alert". The response moved out of create_alert
+                # into its own stage, and this tile went on reading the alert
+                # insert — reporting 0.05 ms for work measured at 1014 ms. The
+                # number was real; it measured a different thing than its label.
+                "respond",
                 f"{blocks['active_blocks']} active blocks, "
                 f"{blocks['events_dropped_lifetime']} events dropped",
                 "running",
@@ -420,6 +424,7 @@ def system_health():
         "summary": {"state": state, "label": label},
         "sources": runtime.status(),
         "sources_not_running": stopped,
+        "sources_completed": runtime.finished(),
         **telemetry.process_metrics(),
         "stages": telemetry.all_stage_stats(),
     }

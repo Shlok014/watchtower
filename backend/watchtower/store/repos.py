@@ -289,6 +289,57 @@ def _soar_rows(conn, sql: str, params) -> list[dict]:
     ]
 
 
+def begin_soar(conn, alert_id: int, playbook: str, priority: str, event: str, ip: str) -> int:
+    """Record that a response is starting, before any action can have an effect.
+
+    Without this there was a window in which `block_ip` had committed on its own
+    autocommit connection — the blocklist row live, traffic already being
+    dropped — while the alert still read "open" and no SOAR row existed. A stop
+    or a crash in that window left an address under active enforcement beside an
+    alert whose stored status says nothing ran, which `soar/engine.py` defines
+    as "the alert was raised and nothing has run yet". That is a false statement
+    about the system's own behaviour, which is the one thing this project may
+    not ship.
+
+    A crash now leaves a row that says `running`, with whatever steps completed.
+    Incomplete, and true.
+    """
+    cur = conn.execute(
+        """INSERT INTO soar_executions (alert_id, ts_ms, event, ip, playbook, priority,
+                                        execution_mode, selection_time_us, status)
+           VALUES (?,?,?,?,?,?,'live',0,'running')""",
+        (alert_id, now_ms(), event, ip, playbook, priority),
+    )
+    bump(conn, "soar")
+    return cur.lastrowid
+
+
+def record_soar_step(conn, execution_id: int, position: int, step: dict) -> None:
+    """Append one completed step. Written as it happens, not at the end."""
+    conn.execute(
+        """INSERT INTO soar_steps (execution_id, position, action, status, executed,
+                                   required, duration_us, detail)
+           VALUES (?,?,?,?,?,?,?,?)""",
+        (
+            execution_id,
+            position,
+            step["action"],
+            step["status"],
+            1 if step["executed"] else 0,
+            1 if step.get("required") else 0,
+            step["duration_us"],
+            step["detail"],
+        ),
+    )
+
+
+def finish_soar(conn, execution_id: int, status: str, selection_time_us: float) -> None:
+    conn.execute(
+        "UPDATE soar_executions SET status = ?, selection_time_us = ? WHERE id = ?",
+        (status, selection_time_us, execution_id),
+    )
+
+
 def insert_soar(conn, response: dict, alert_id: int) -> int:
     cur = conn.execute(
         """INSERT INTO soar_executions (alert_id, ts_ms, event, ip, playbook, priority,

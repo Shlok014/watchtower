@@ -346,9 +346,21 @@ def client():
 
 
 def test_blocklist_endpoint_reports_real_drops(client):
-    client.post(f"{API_PREFIX}/simulate-attack", json={"attack_type": "brute_force"})
+    """Driven by a fixed event, not by the random attack generator.
+
+    This used to POST /simulate-attack and assert a block existed. A brute_force
+    burst draws each of its 10-18 events at random from a pool that is two
+    thirds `failed_login`, and `failed_login` has no playbook — it falls to the
+    default, which only notifies. Measured over 20,000 bursts, **0.54% contain
+    no brute_force event at all**, and in those the test failed. I saw it fail
+    exactly once and the three "no playbook is defined for this event type"
+    lines in that run were what gave it away.
+
+    A test that fails one run in two hundred teaches people to re-run it.
+    """
+    process_log(_raw())
     body = client.get(f"{API_PREFIX}/blocklist").get_json()
-    assert body["entries"], "the attack should have blocked at least one address"
+    assert body["entries"], "the alert should have blocked its address"
     assert body["totals"]["active_blocks"] >= 1
     # And it states the scope of enforcement rather than implying a firewall.
     assert "no" in body["enforcement"].lower() and "firewall" in body["enforcement"]
@@ -602,3 +614,65 @@ def test_a_slow_webhook_does_not_hold_the_write_lock(monkeypatch):
     assert repos.counters()["events"] == 4
     assert repos.counters()["blocks"] == 4
     assert conn.execute("SELECT count(*) FROM soar_executions").fetchone()[0] == 4
+
+
+def test_a_response_is_recorded_before_it_can_have_a_side_effect():
+    """`block_ip` commits on its own, so the record must exist before it runs.
+
+    Round two found the window: the blocklist row committed on an autocommit
+    connection while the alert still read "open" and no SOAR row existed. A stop
+    or a crash in that window left an address under active enforcement beside an
+    alert whose stored status means, in this module's own words, "nothing has
+    run yet". A crash now leaves a row saying `running` with the steps that
+    completed — incomplete, and true.
+    """
+    observed = {}
+
+    def watching(ctx):
+        # Mid-response: what does the store say has happened so far?
+        conn = db.connect()
+        row = conn.execute("SELECT id, status FROM soar_executions").fetchone()
+        observed["soar_status"] = row["status"] if row else None
+        return actions.Outcome(actions.EXECUTED, "noted")
+
+    import pytest as _pytest
+
+    mp = _pytest.MonkeyPatch()
+    mp.setitem(actions.ACTIONS, "block_ip", watching)
+    try:
+        process_log(_raw())
+    finally:
+        mp.undo()
+
+    assert observed["soar_status"] == "running", (
+        "no SOAR row existed while an enforcing action was executing — the "
+        "window that leaves a live block beside an alert reading 'open'"
+    )
+    # And it is finalised afterwards.
+    final = db.connect().execute("SELECT status FROM soar_executions").fetchone()
+    assert final["status"] == "contained"
+
+
+def test_steps_are_recorded_as_they_complete():
+    """The stored record must never claim less than what has happened."""
+    counts = []
+
+    def watching(ctx):
+        counts.append(
+            db.connect().execute("SELECT count(*) FROM soar_steps").fetchone()[0]
+        )
+        return actions.Outcome(actions.EXECUTED, "noted")
+
+    import pytest as _pytest
+
+    mp = _pytest.MonkeyPatch()
+    for name in ("block_ip", "incident_report", "notify"):
+        mp.setitem(actions.ACTIONS, name, watching)
+    try:
+        process_log(_raw())
+    finally:
+        mp.undo()
+
+    # Each action sees the steps before it already durably recorded.
+    assert counts == sorted(counts)
+    assert counts[-1] >= 1, "steps were only written at the end"

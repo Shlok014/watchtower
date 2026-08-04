@@ -35,10 +35,20 @@ ACTION_FAILED = "action_failed"
 ENFORCING_ACTIONS = {"block_ip"}
 
 
-def respond(conn, alert: dict) -> dict:
-    """Run the playbook for this alert. Returns the execution record."""
+def respond(conn, alert: dict, on_step=None, on_start=None) -> dict:
+    """Run the playbook for this alert. Returns the execution record.
+
+    ``on_start`` is called with the selected playbook *before* the first action,
+    and ``on_step`` after each one completes. They exist so the store can record
+    that a response is under way before anything has a side effect: `block_ip`
+    commits on its own, so without them a crash mid-response left an address
+    under active enforcement beside an alert reading "open" — which this
+    module's own vocabulary defines as "nothing has run yet".
+    """
     playbook = playbooks_mod.for_event(alert.get("event", ""))
     ts = datetime.now(UTC)
+    if on_start is not None:
+        on_start(playbook)
     t_start = time.perf_counter()
 
     steps = []
@@ -55,16 +65,17 @@ def respond(conn, alert: dict) -> dict:
                 enforced = True
         if outcome.failed and step.required:
             required_failed = True
-        steps.append(
-            {
-                "action": step.action,
-                "status": outcome.status,
-                "required": step.required,
-                "executed": outcome.executed,
-                "duration_us": outcome.duration_us,
-                "detail": outcome.detail,
-            }
-        )
+        record = {
+            "action": step.action,
+            "status": outcome.status,
+            "required": step.required,
+            "executed": outcome.executed,
+            "duration_us": outcome.duration_us,
+            "detail": outcome.detail,
+        }
+        steps.append(record)
+        if on_step is not None:
+            on_step(len(steps) - 1, record)
 
     total_us = round((time.perf_counter() - t_start) * 1e6, 1)
 

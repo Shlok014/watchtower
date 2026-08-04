@@ -61,26 +61,72 @@ def run_response(alert: dict) -> dict | None:
     and the source threads print that and carry on.
 
     The alert is committed before its response, so a failure here leaves an
-    alert with status "open" and no SOAR record. That is a true statement about
-    what happened, and it is recoverable. Losing the event is neither.
+    alert whose status has not advanced. That is recoverable; losing the event
+    is not.
+
+    **But "no SOAR record" was not a true statement, and round two caught it.**
+    ``block_ip`` writes on an autocommit connection, so the blocklist row lands
+    the moment it runs — while the alert still read "open" and no execution row
+    existed. A stop or a crash in that window left an address under active
+    enforcement beside an alert whose status means, in ``soar/engine.py``'s own
+    words, "the alert was raised and nothing has run yet". The docstring that
+    used to sit here called that state true. It was not.
+
+    So the execution row is now written *before* the first action can have an
+    effect, and each step is recorded as it completes. A crash leaves a row
+    saying ``running`` with the steps that finished — incomplete, and true.
     """
+    exec_id: list[int] = []
+
+    def on_start(playbook):
+        # Committed before the first action can have a side effect, so a crash
+        # from here on leaves a row saying `running` rather than silence.
+        with store_db.write() as conn:
+            exec_id.append(
+                repos.begin_soar(
+                    conn,
+                    alert_id=alert["id"],
+                    playbook=playbook.name,
+                    priority=playbook.priority,
+                    event=alert["event"],
+                    ip=alert["ip"],
+                )
+            )
+
+    def on_step(position, step):
+        # Each step lands as it completes. The stored record therefore never
+        # claims less than what has actually happened.
+        with store_db.write() as conn:
+            repos.record_soar_step(conn, exec_id[0], position, step)
+
     try:
-        response = soar.respond(store_db.connect(), alert)
+        response = soar.respond(
+            store_db.connect(), alert, on_step=on_step, on_start=on_start
+        )
     except Exception as exc:
-        # A broken playbook must not take the pipeline with it. The alert
-        # stands, unresponded, and says so.
+        # A broken playbook, a vanished alert row, anything. The event is
+        # already safe; say what failed and leave the partial record standing.
         print(f"⚠️  response failed for alert {alert['id']}: {type(exc).__name__}: {exc}")
+        if exec_id:
+            try:
+                with store_db.write() as conn:
+                    repos.finish_soar(conn, exec_id[0], "interrupted", 0.0)
+            except Exception:
+                pass
         return None
 
-    with store_db.write() as conn:
-        response["id"] = repos.insert_soar(conn, response, alert["id"])
-        # The status is whatever the playbook earned. It used to be set to
-        # "mitigated" on the line after selecting a playbook — and selection
-        # only built a dict, so every alert claimed to be remediated the instant
-        # it was raised.
-        if response["status"] != "open":
-            repos.set_alert_status(conn, alert["id"], response["status"])
-            alert["status"] = response["status"]
+    try:
+        with store_db.write() as conn:
+            repos.finish_soar(
+                conn, exec_id[0], response["status"], response["selection_time_us"]
+            )
+            if response["status"] != "open":
+                repos.set_alert_status(conn, alert["id"], response["status"])
+                alert["status"] = response["status"]
+    except Exception as exc:
+        print(f"⚠️  could not finalise response for alert {alert['id']}: {exc}")
+        return None
+    response["id"] = exec_id[0]
     alert["soar_response"] = response
     return response
 
