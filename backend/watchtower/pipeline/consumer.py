@@ -18,7 +18,7 @@ from .normalize import normalize_log
 
 
 def create_alert(conn, log_entry: dict, detection_result: dict, event_id: int) -> dict:
-    """Create an alert, run its response playbook, and record what happened."""
+    """Insert the alert row. The response runs later, outside this transaction."""
     alert = {
         "timestamp": datetime.now(UTC).isoformat(),
         "event": log_entry["event"],
@@ -36,18 +36,53 @@ def create_alert(conn, log_entry: dict, detection_result: dict, event_id: int) -
         "soar_response": None,
     }
     alert["id"] = repos.insert_alert(conn, alert, event_id)
-
-    # The playbook runs, and the alert's status is then whatever the playbook
-    # earned. It used to be set to "mitigated" on the line after selecting a
-    # playbook — and selection only built a dict, so every alert in the system
-    # claimed to have been remediated the instant it was raised.
-    response = soar.respond(conn, alert)
-    response["id"] = repos.insert_soar(conn, response, alert["id"])
-    if response["status"] != "open":
-        repos.set_alert_status(conn, alert["id"], response["status"])
-        alert["status"] = response["status"]
-    alert["soar_response"] = response
     return alert
+
+
+def run_response(alert: dict) -> dict | None:
+    """Run the alert's playbook in its own transaction, after the event is safe.
+
+    **This deliberately does not share the ingest transaction**, and two
+    reproduced failures are why.
+
+    *The event used to vanish.* Playbook selection can raise — a typo in a YAML
+    file is enough — and the exception unwound the transaction that had already
+    inserted the event row, its ledger block and the counter bump. An operator
+    who mistyped one action name got every *benign* event stored normally and
+    every *alerting* event erased: no event, no block, no alert, no counter. And
+    because SQLite reuses the rowids of a rolled-back transaction, the chain had
+    no height gap — `verify` reported it clean over a record set missing exactly
+    the anomalous traffic.
+
+    *And concurrent events were lost.* The webhook's 3-second network call ran
+    inside `BEGIN IMMEDIATE`, holding the single write lock for its duration.
+    With busy_timeout at 5s, the third concurrent writer got
+    "database is locked" out of BEGIN, so its event was never written at all —
+    and the source threads print that and carry on.
+
+    The alert is committed before its response, so a failure here leaves an
+    alert with status "open" and no SOAR record. That is a true statement about
+    what happened, and it is recoverable. Losing the event is neither.
+    """
+    try:
+        response = soar.respond(store_db.connect(), alert)
+    except Exception as exc:
+        # A broken playbook must not take the pipeline with it. The alert
+        # stands, unresponded, and says so.
+        print(f"⚠️  response failed for alert {alert['id']}: {type(exc).__name__}: {exc}")
+        return None
+
+    with store_db.write() as conn:
+        response["id"] = repos.insert_soar(conn, response, alert["id"])
+        # The status is whatever the playbook earned. It used to be set to
+        # "mitigated" on the line after selecting a playbook — and selection
+        # only built a dict, so every alert claimed to be remediated the instant
+        # it was raised.
+        if response["status"] != "open":
+            repos.set_alert_status(conn, alert["id"], response["status"])
+            alert["status"] = response["status"]
+    alert["soar_response"] = response
+    return response
 
 
 def process_log(raw_log: dict) -> dict:
@@ -65,10 +100,15 @@ def process_log(raw_log: dict) -> dict:
 
     ingested_ts_ms = repos.now_ms()
 
-    # One transaction for the whole event: the row, its alert, its SOAR record
-    # and its ledger block commit together or not at all. A half-committed
-    # event would leave a ledger block chained to a log entry that does not
-    # exist.
+    # One transaction for the *record*: the row, its ledger block and its alert
+    # commit together or not at all. A half-committed event would leave a ledger
+    # block chained to a log entry that does not exist.
+    #
+    # The response is NOT in here — see run_response. Everything inside this
+    # block is local, bounded work against SQLite. Nothing that can make a
+    # network call or read a config file off disk belongs in a transaction that
+    # holds the single write lock.
+    alert = None
     with store_db.write() as conn:
         # ── enforcement, before detection ──
         # This is the closed loop's other half. A blocked address has its
@@ -112,8 +152,22 @@ def process_log(raw_log: dict) -> dict:
 
             if detection["is_anomaly"]:
                 t0 = time.perf_counter()
-                create_alert(conn, normalized, detection, event_id)
+                alert = create_alert(conn, normalized, detection, event_id)
                 telemetry.record("alert", time.perf_counter() - t0)
+
+    # Committed. From here the event is safe whatever the response does.
+    if alert is not None:
+        t0 = time.perf_counter()
+        run_response(alert)
+        telemetry.record("respond", time.perf_counter() - t0)
+
+    # Housekeeping runs on the pipeline, not on one source's tick. It used to be
+    # wired only into SyntheticSource(on_tick=...), so every documented real
+    # configuration — syslog, file tail, replay — never pruned, never truncated
+    # the WAL, and never reclaimed an expired blocklist row, while /api/v1/stats
+    # went on publishing the retention policy as fact. The call is a monotonic
+    # comparison on all but one invocation in five minutes.
+    housekeeping()
 
     telemetry.record("pipeline", time.perf_counter() - t_pipeline)
     telemetry.record_event()

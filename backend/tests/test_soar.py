@@ -450,3 +450,92 @@ def test_a_canon_this_build_cannot_reproduce_is_reported_not_guessed():
     assert result.findings[0].reason == "unknown_canon"
     # It says it cannot check, rather than claiming tampering it did not observe.
     assert "neither confirmed nor refuted" in result.findings[0].detail
+
+
+# ─── the response must never cost us the event ───────────────────────────────
+def test_a_broken_playbook_does_not_erase_the_event(monkeypatch):
+    """The critical one.
+
+    Playbook selection used to run inside the ingest transaction. A typo in a
+    YAML file raised, the exception unwound `Transaction.__exit__`, and the
+    ROLLBACK took the event row, its ledger block and the counter bump with it.
+    Every *benign* event was stored normally and every *alerting* event was
+    erased — and because SQLite reuses the rowids of a rolled-back transaction,
+    `verify` saw no height gap and reported the chain clean over a record set
+    missing exactly the anomalous traffic.
+    """
+    from watchtower import ledger
+
+    def explode(event):
+        raise playbooks.PlaybookError("brute_force.yaml: unknown action 'block_ipp'")
+
+    monkeypatch.setattr(playbooks, "for_event", explode)
+
+    process_log(_raw(event="login_success"))  # benign
+    process_log(_raw())  # alerting — its playbook is broken
+
+    conn = db.connect()
+    kinds = [r["event"] for r in conn.execute("SELECT event FROM events ORDER BY id")]
+    assert kinds == ["login_success", "brute_force"], "the alerting event was erased"
+    assert repos.counters()["events"] == 2
+    assert repos.counters()["blocks"] == 2
+    # The alert itself survives, with no response and an honest status.
+    row = conn.execute("SELECT status FROM alerts").fetchone()
+    assert row["status"] == "open"
+    assert conn.execute("SELECT count(*) FROM soar_executions").fetchone()[0] == 0
+    assert ledger.verify(conn).ok
+
+
+def test_the_write_lock_is_not_held_across_the_response():
+    """A 3s webhook used to hold BEGIN IMMEDIATE, so concurrent events were lost.
+
+    Asserted structurally rather than by racing threads: the response runs after
+    the ingest transaction has committed, so no write transaction is open while
+    an action is executing.
+    """
+    seen = []
+
+    def watching(ctx):
+        seen.append(db.connect().in_transaction)
+        return actions.Outcome(actions.EXECUTED, "noted")
+
+    import pytest as _pytest
+
+    mp = _pytest.MonkeyPatch()
+    mp.setitem(actions.ACTIONS, "block_ip", watching)
+    try:
+        process_log(_raw())
+    finally:
+        mp.undo()
+
+    assert seen, "the action never ran"
+    assert not any(seen), "an action ran while the ingest write transaction was open"
+
+
+def test_housekeeping_runs_for_every_source_not_just_synthetic():
+    """It was wired only into SyntheticSource(on_tick=...).
+
+    So `--sources syslog`, `--sources file:...` and `--sources replay:...` — all
+    three documented real configurations — never pruned, never truncated the
+    WAL and never reclaimed an expired blocklist row, while /api/v1/stats went
+    on publishing the retention policy as fact.
+    """
+    from watchtower.pipeline import consumer
+
+    calls = []
+    real = consumer.housekeeping
+    try:
+        consumer.housekeeping = lambda: calls.append(1)
+        # A replayed HDFS line: no synthetic source anywhere in the picture.
+        from watchtower.sources import replay
+
+        process_log(replay.parse_hdfs(HDFS_LINE_FOR_HOUSEKEEPING))
+    finally:
+        consumer.housekeeping = real
+    assert calls, "housekeeping never ran for a non-synthetic source"
+
+
+HDFS_LINE_FOR_HOUSEKEEPING = (
+    "081109 204005 35 INFO dfs.FSNamesystem: BLOCK* NameSystem.addStoredBlock: "
+    "blockMap updated: 10.251.73.220:50010 is added to blk_7128370237687728475 size 67108864"
+)

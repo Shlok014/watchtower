@@ -433,6 +433,9 @@ def stats(buckets: int = 30, bucket_seconds: int = 10) -> dict:
     med = sev.get("medium", 0)
     low = sev.get("low", 0)
 
+    # A recent window, not a lifetime total. The chart built from it sits beside
+    # a stat card showing the lifetime count, and the two disagreed with nothing
+    # saying why. The size travels with the data so the UI can label it.
     recent_window = 200
     event_dist = dict(
         conn.execute(
@@ -472,12 +475,31 @@ def stats(buckets: int = 30, bucket_seconds: int = 10) -> dict:
         "critical_alerts": crit,
         "medium_severity_alerts": med,
         "event_distribution": event_dist,
+        "distribution_window": recent_window,
         "source_distribution": source_dist,
         "origin_distribution": origin_dist,
     }
 
 
 # ── retention & reset ────────────────────────────────────────────────────────
+def known_sources(conn=None, limit: int = 100) -> list[str]:
+    """Distinct source names actually present in the store.
+
+    /api/v1/stats used to return the synthetic generator's seven hardcoded
+    hostnames here, and the dashboard builds its "All Sources" filter from it.
+    Run any real source — syslog, a file tail, an HDFS replay — and every option
+    in that dropdown matched nothing, while the sources genuinely in the table
+    were absent from it.
+    """
+    conn = conn or db.connect()
+    return [
+        r[0]
+        for r in conn.execute(
+            "SELECT DISTINCT source FROM events ORDER BY source LIMIT ?", (limit,)
+        )
+    ]
+
+
 def prune(conn, hours: int | None = None) -> int:
     """Delete events older than the window, keeping anything an alert cites.
 

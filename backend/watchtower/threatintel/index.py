@@ -18,6 +18,7 @@ Design notes worth defending in review:
 import bisect
 import ipaddress
 import threading
+import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -40,14 +41,40 @@ class Verdict:
 
 @dataclass
 class FeedState:
+    """One feed's provenance.
+
+    ``state`` and ``age_hours`` are **computed on read**, not stored at load.
+    They used to be assigned once when the index was built and cached in a
+    module global that nothing ever reloaded — so for the whole life of the
+    process /api/v1/threat-intel reported a constant age as though it were
+    current, and the "degraded — threat feed is stale" branch could only fire
+    for a feed that was already stale at startup. tor_exits has a 24-hour
+    freshness window; any process running longer than a day went on reporting
+    "All systems operational" over a feed the project's own policy calls stale.
+    """
+
     name: str
-    state: str = MISSING
     entries: int = 0
     fetched_at: str | None = None
-    age_hours: float | None = None
     citation: str = ""
     homepage: str = ""
     error: str | None = None
+    max_age_hours: int | None = None
+    # Set only for a feed that is absent or unreadable; otherwise derived.
+    missing: bool = True
+
+    @property
+    def age_hours(self) -> float | None:
+        return _age_hours(self.fetched_at)
+
+    @property
+    def state(self) -> str:
+        if self.missing:
+            return MISSING
+        age = self.age_hours
+        if age is None or self.max_age_hours is None:
+            return FRESH
+        return STALE if age > self.max_age_hours else FRESH
 
 
 def _age_hours(iso: str | None) -> float | None:
@@ -108,10 +135,8 @@ class ReputationIndex:
 
             st.entries = len(parsed)
             st.fetched_at = entry.get("fetched_at")
-            st.age_hours = _age_hours(st.fetched_at)
-            st.state = (
-                STALE if st.age_hours is not None and st.age_hours > spec.max_age_hours else FRESH
-            )
+            st.max_age_hours = spec.max_age_hours
+            st.missing = False
             idx.states[spec.name] = st
         return idx
 
@@ -200,11 +225,29 @@ _lock = threading.Lock()
 _index: ReputationIndex | None = None
 
 
+# How long a loaded index is trusted before the manifest is re-read. Feeds are
+# refreshed by hand (`make feeds`), so this is about noticing that it happened,
+# not about polling — five minutes is far below any feed's freshness window and
+# costs one small JSON read plus a parse.
+RELOAD_AFTER_S = 300
+_loaded_at: float = 0.0
+
+
 def get_index(reload: bool = False) -> ReputationIndex:
-    global _index
+    """The process-wide reputation index, re-read when it gets old.
+
+    It used to be loaded exactly once and cached forever, and nothing called
+    this with reload=True. Two consequences, both reproduced: a `make feeds`
+    refresh was invisible until the process restarted, and — with staleness
+    also computed at load — a feed could age past its window while the health
+    endpoint went on reporting it fresh.
+    """
+    global _index, _loaded_at
     with _lock:
-        if _index is None or reload:
+        now = time.monotonic()
+        if _index is None or reload or (now - _loaded_at) > RELOAD_AFTER_S:
             _index = ReputationIndex.load()
+            _loaded_at = now
         return _index
 
 

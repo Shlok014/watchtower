@@ -87,12 +87,17 @@ def get_stats():
             "logs_over_time": st["timeline"],
             "alert_distribution": st["alert_distribution"],
             "event_distribution": st["event_distribution"],
+            "distribution_window": st["distribution_window"],
             "source_distribution": st["source_distribution"],
             "origin_distribution": st["origin_distribution"],
             # Enforcement, surfaced on the same poll the dashboard already makes.
             **repos.blocklist_totals(),
             "uptime_seconds": telemetry.uptime_seconds(),
-            "sources": synthetic.SOURCES,
+            # The sources actually in the store, not the synthetic generator's
+            # hardcoded hostname list — which made the dashboard's source filter
+            # match nothing whenever a real source was running.
+            "sources": repos.known_sources(),
+            "synthetic_source_profiles": synthetic.SOURCES,
         }
     )
 
@@ -334,7 +339,8 @@ def _component_health():
     thread dead and nothing being processed.
     """
     alive = runtime.any_alive()
-    gen_status = "running" if alive else "stopped"
+    stopped = runtime.dead() + runtime.never_started()
+    gen_status = "running" if alive and not stopped else "stopped" if not alive else "degraded"
     c = repos.counters()
     retained = store_db.connect().execute("SELECT count(*) FROM events").fetchone()[0]
     feeds = threatintel.get_index()
@@ -383,16 +389,25 @@ def _component_health():
         feed_ok,
         stale,
         alive,
+        stopped,
     )
 
 
 @bp.route("/system-health", methods=["GET"])
 def system_health():
     """Measured process and pipeline health."""
-    components, feed_ok, stale, alive = _component_health()
+    components, feed_ok, stale, alive, stopped = _component_health()
 
     if not alive:
         state, label = "down", "No source is running"
+    elif stopped:
+        # One dead source among several used to read "All systems operational",
+        # because the check was `any(alive)`. A deaf syslog port is not an
+        # operational system.
+        state, label = (
+            "degraded",
+            f"{len(stopped)} configured source(s) not running: {', '.join(stopped)}",
+        )
     elif not feed_ok:
         state, label = "degraded", "No threat feed cached — reputation unavailable"
     elif stale:
@@ -404,6 +419,7 @@ def system_health():
         "components": components,
         "summary": {"state": state, "label": label},
         "sources": runtime.status(),
+        "sources_not_running": stopped,
         **telemetry.process_metrics(),
         "stages": telemetry.all_stage_stats(),
     }
@@ -417,7 +433,7 @@ def system_health():
 
 @bp.route("/pipeline-status", methods=["GET"])
 def pipeline_status():
-    components, _, _, _ = _component_health()
+    components, _, _, _, _ = _component_health()
     return jsonify({"stages": components, "ruleset_version": rules.ruleset_version()})
 
 

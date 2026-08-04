@@ -23,7 +23,15 @@ export function AlertsPanel({ alerts, dimmed }) {
               </span>
               <span className="alert-score">
                 Score: {a.anomaly_score}
-                <span className="confidence-tag">/ {a.features?.threshold ?? 0.45} threshold</span>
+                {/* The threshold this alert was actually judged against, stored
+                    with it. This printed a hardcoded 0.45 because the API never
+                    sent one — so it would have gone on saying 0.45 after anyone
+                    changed WATCHTOWER_ALERT_THRESHOLD. */}
+                <span className="confidence-tag">
+                  {a.features?.threshold != null
+                    ? `/ ${a.features.threshold} threshold`
+                    : '/ threshold not recorded'}
+                </span>
               </span>
             </div>
             <div className="alert-explanation">{a.explanation}</div>

@@ -36,7 +36,7 @@ _MAXLEN = 512
 _stage_samples: dict[str, collections.deque] = collections.defaultdict(
     lambda: collections.deque(maxlen=_MAXLEN)
 )
-_STAGES = ("ingest", "normalize", "detect", "alert", "ledger", "pipeline")
+_STAGES = ("ingest", "normalize", "detect", "alert", "respond", "ledger", "pipeline")
 
 
 def record(stage: str, seconds: float) -> None:

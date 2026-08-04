@@ -309,3 +309,35 @@ def test_every_source_lands_in_the_same_store_with_its_own_origin():
     assert origins == {"replay:hdfs": 1, "syslog": 1, "file": 1}
     # And every one of them got a ledger block.
     assert repos.counters()["blocks"] == 3
+
+
+def test_tailer_waits_for_the_newline_before_emitting(tmp_path):
+    """readline() returns a partial line at EOF, newline or not.
+
+    Catching a writer mid-line split one log line into two events: the first
+    with whatever address was in the first half and a severity classified from
+    half a message, the second unparseable and attributed to loopback. Both were
+    chained into the ledger as facts.
+    """
+    log = tmp_path / "app.log"
+    log.write_text("")
+    src = file_tailer.FileTailSource(str(log), poll_interval=0.05)
+    seen = []
+    src.start(seen.append)
+    time.sleep(0.2)
+    try:
+        with open(log, "a") as fh:
+            fh.write("Aug  4 21:09:20 host app: connection from 10.0.0.9 ")
+            fh.flush()
+        time.sleep(0.4)
+        assert seen == [], "a partial line was emitted as a finished event"
+
+        with open(log, "a") as fh:
+            fh.write("closed cleanly\n")
+            fh.flush()
+        assert _tail_until(src, seen, 1), "the completed line never arrived"
+        assert len(seen) == 1, "one log line must produce exactly one event"
+        assert "connection from 10.0.0.9 closed cleanly" in seen[0]["message"]
+        assert seen[0]["ip"] == "10.0.0.9"
+    finally:
+        src.stop()
