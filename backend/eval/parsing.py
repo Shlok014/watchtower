@@ -17,7 +17,7 @@ from collections import defaultdict
 from watchtower import config
 from watchtower.detect.parser import LogParser
 
-DATA = config.get().datasets_dir
+DATA = config.get().samples_dir
 
 
 def load_ground_truth(name: str):

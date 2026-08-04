@@ -23,7 +23,38 @@ EVENT_TYPES = {
     "privilege_escalation": {"severity": "critical", "category": "attack"},
     "data_exfiltration": {"severity": "critical", "category": "data_leak"},
     "normal_traffic": {"severity": "low", "category": "network"},
+    # ── real sources ──────────────────────────────────────────────────────────
+    # Syslog, a tailed file and a dataset replay carry a *log level*, not a
+    # security classification. Mapping "WARN" onto "suspicious_ip" would invent
+    # a threat judgement the line never made, so these keep the level they came
+    # with and the severity is simply that level restated. They deliberately
+    # carry no entry in EVENT_WEIGHTS: a real event alerts here only when the
+    # correlation windows or the reputation lookup say something, never because
+    # a filesystem logged an error.
+    #
+    # The eight names are the RFC 5424 severities, so a syslog PRI maps onto
+    # them exactly and HDFS's INFO/WARN/ERROR/FATAL land on the same scale.
+    "log_debug": {"severity": "low", "category": "application"},
+    "log_info": {"severity": "low", "category": "application"},
+    "log_notice": {"severity": "low", "category": "application"},
+    "log_warning": {"severity": "medium", "category": "application"},
+    "log_error": {"severity": "high", "category": "application"},
+    "log_critical": {"severity": "critical", "category": "application"},
+    "log_alert": {"severity": "critical", "category": "application"},
+    "log_emergency": {"severity": "critical", "category": "application"},
 }
+
+# RFC 5424 severity code → event name. Index is the numeric severity.
+SYSLOG_SEVERITY = (
+    "log_emergency",
+    "log_alert",
+    "log_critical",
+    "log_error",
+    "log_warning",
+    "log_notice",
+    "log_info",
+    "log_debug",
+)
 
 DEFAULT_META = {"severity": "low", "category": "other"}
 

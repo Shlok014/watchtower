@@ -68,6 +68,7 @@ class Config:
     drain_dir: Path = field(init=False)
     models_dir: Path = field(init=False)
     incidents_dir: Path = field(init=False)
+    samples_dir: Path = field(init=False)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "feeds_dir", self.data_dir / "feeds")
@@ -75,6 +76,10 @@ class Config:
         object.__setattr__(self, "drain_dir", self.data_dir / "drain")
         object.__setattr__(self, "models_dir", self.data_dir / "models")
         object.__setattr__(self, "incidents_dir", self.data_dir / "incidents")
+        # The committed loghub 2k samples. Pinned to BASE_DIR rather than
+        # data_dir: a test that redirects data_dir at a tmpdir still needs to
+        # read them, and they are source, not runtime state.
+        object.__setattr__(self, "samples_dir", BASE_DIR / "data" / "samples")
 
 
 def from_env() -> Config:

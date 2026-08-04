@@ -10,10 +10,15 @@ import threading
 
 from . import config
 from .pipeline.consumer import housekeeping, process_log
-from .sources import synthetic
+from .sources import file_tailer, replay, synthetic, syslog_server
 
 _lock = threading.Lock()
 _sources: dict[str, object] = {}
+
+SPEC_HELP = (
+    "synthetic | syslog | syslog:<port> | file:<path> | replay:<dataset> "
+    "| replay:<dataset>@<events-per-second>"
+)
 
 
 class UnknownSource(ValueError):
@@ -23,17 +28,44 @@ class UnknownSource(ValueError):
 def build(spec: str):
     """Turn one ``--sources`` token into a source instance.
 
-    Tokens are ``synthetic``, ``syslog``, ``file:<path>`` or ``replay:<name>``.
-    Only ``synthetic`` exists so far; the rest raise by name rather than being
-    silently ignored, because a source that was requested and quietly did not
-    start is indistinguishable from a source that started and saw nothing.
+    Unknown tokens raise by name rather than being skipped. A source that was
+    requested and quietly did not start is indistinguishable, on the dashboard,
+    from a source that started and saw nothing — and "nothing suspicious
+    happened" is the most expensive wrong answer this system can give.
     """
     if spec == "synthetic":
         return synthetic.SyntheticSource(on_tick=housekeeping)
-    raise UnknownSource(
-        f"unknown source {spec!r} — known sources: synthetic "
-        "(syslog, file:<path> and replay:<name> are not implemented yet)"
-    )
+
+    if spec == "syslog" or spec.startswith("syslog:"):
+        port = syslog_server.DEFAULT_PORT
+        if ":" in spec:
+            _, _, raw = spec.partition(":")
+            try:
+                port = int(raw)
+            except ValueError as exc:
+                raise UnknownSource(f"syslog port must be a number, got {raw!r}") from exc
+        return syslog_server.SyslogSource(port=port)
+
+    if spec.startswith("file:"):
+        path = spec[len("file:") :]
+        if not path:
+            raise UnknownSource("file: needs a path, e.g. file:/var/log/system.log")
+        return file_tailer.FileTailSource(path)
+
+    if spec.startswith("replay:"):
+        rest = spec[len("replay:") :]
+        dataset, _, speed_raw = rest.partition("@")
+        if not dataset:
+            raise UnknownSource(f"replay: needs a dataset — known: {', '.join(replay.DATASETS)}")
+        speed = 20.0
+        if speed_raw:
+            try:
+                speed = float(speed_raw)
+            except ValueError as exc:
+                raise UnknownSource(f"replay speed must be a number, got {speed_raw!r}") from exc
+        return replay.ReplaySource(dataset=dataset, speed=speed)
+
+    raise UnknownSource(f"unknown source {spec!r} — expected one of: {SPEC_HELP}")
 
 
 def start(specs: tuple[str, ...] | None = None) -> list[str]:
@@ -68,7 +100,17 @@ def any_alive() -> bool:
 
 
 def status() -> list[dict]:
-    return [
-        {"name": spec, "origin": getattr(s, "origin", spec), "alive": s.alive()}
-        for spec, s in running().items()
-    ]
+    out = []
+    for spec, s in running().items():
+        entry = {
+            "spec": spec,
+            "name": getattr(s, "name", spec),
+            "origin": getattr(s, "origin", spec),
+            "alive": s.alive(),
+        }
+        # Sources report their own counters. A replay that has finished its file
+        # is not alive and should say how much it processed, not vanish.
+        if hasattr(s, "stats"):
+            entry["stats"] = s.stats()
+        out.append(entry)
+    return out
