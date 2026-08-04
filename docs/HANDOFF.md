@@ -10,22 +10,17 @@ follows exists because that rule forced it.
 
 ## The state in one line
 
-Sessions 0–10 are done. **Session 11 (screenshots, masthead, going public) is
-all that remains**, and it needs a human — see "Pick up here".
+Sessions 0–11 are done and **merged to `main`**, which is green: 128 backend
+tests, 36 frontend tests, ruff, eslint, and both gates.
 
-Five pull requests are open and **stacked**, in this order:
+Two things remain, and both need a human:
 
-| PR | Branch | What |
-|---:|---|---|
-| [#3](https://github.com/Shlok014/watchtower/pull/3) | `refactor/package-layout` | Session 4 — the package split, `/api/v1`, config |
-| [#4](https://github.com/Shlok014/watchtower/pull/4) | `feat/real-log-sources` | Session 7 — syslog, file tail, dataset replay |
-| [#5](https://github.com/Shlok014/watchtower/pull/5) | `feat/real-detection-model` | Session 6b — versioned model, real retrain |
-| [#6](https://github.com/Shlok014/watchtower/pull/6) | `feat/soar-enforcement` | Session 8 — the closed loop |
-| [#7](https://github.com/Shlok014/watchtower/pull/7) | `feat/frontend-truthful-states` | Session 9 — the frontend truth pass |
-
-**Merge them in that order.** Each branch is based on the previous one, so the
-diff each PR shows against `main` includes its predecessors until they land.
-Squash-merging #3 first, then #4, and so on, produces a clean history.
+1. **Screenshots and the two demo GIFs.** The Chrome extension was not connected
+   during the build, so none exist — and none is referenced, because a broken
+   image on the masthead is worse than no image.
+2. **Flipping the repo public.** Left deliberately to the owner. It also unblocks
+   Actions billing, so **CI has still never produced a green run** — no CI badge
+   until it has, and the README says why in a comment where the badge would go.
 
 ---
 

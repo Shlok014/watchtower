@@ -1,8 +1,20 @@
 # Watchtower
 
-**A security operations dashboard: log pipeline, rule-based detection with
-feature-level explanations, real threat-feed IP reputation, response playbooks,
-and a SHA-256 hash-chained audit ledger — Flask + React.**
+**A security operations pipeline that does not lie about itself.** Multi-source
+log ingestion → Drain3 template mining → detection → response playbooks that
+really enforce → a tamper-evident audit ledger. Flask + React + scikit-learn.
+
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776ab.svg)](backend/requirements.txt)
+[![Node 20+](https://img.shields.io/badge/node-20%2B-5fa04e.svg)](frontend/package.json)
+[![Tests](https://img.shields.io/badge/tests-128%20backend%20%2B%2036%20frontend-34d399.svg)](#tests)
+
+<!-- No CI badge. GitHub Actions has been refused for billing since the
+     workflow landed, so no run has ever gone green. The whole backend job was
+     reproduced locally on a clean install instead (see Tests), but a badge
+     claiming a passing build that never ran would be exactly the kind of
+     decoration this project exists to remove. It goes up the day a run is
+     genuinely green, and not before. -->
 
 > ### Read this first
 >
@@ -16,6 +28,58 @@ and a SHA-256 hash-chained audit ledger — Flask + React.**
 > I am rebuilding it into the real thing, one layer at a time. The table below
 > says exactly what is real *today* — a security tool that lies about its own
 > capabilities would be an irony too far.
+
+## Architecture
+
+Mermaid rather than a PNG: it renders natively on GitHub in both themes, it
+diffs, and it cannot quietly go stale the way an exported image does.
+
+```mermaid
+flowchart LR
+    subgraph sources["Sources — all emit through one consumer"]
+        SYN["synthetic<br/>labelled, not hidden"]
+        SYS["syslog :5514<br/>RFC 3164 / 5424"]
+        FIL["file tail<br/>inode rotation"]
+        REP["replay<br/>real loghub logs"]
+    end
+
+    SYN --> NORM
+    SYS --> NORM
+    FIL --> NORM
+    REP --> NORM
+
+    NORM["normalize<br/>severity · category · reputation"]
+    NORM --> BLK{"on the<br/>blocklist?"}
+
+    BLK -->|yes| DROP["mark dropped<br/>count the hit"]
+    BLK -->|no| DET["detection<br/>sliding-window rules"]
+
+    DET --> ALERT{"score >= threshold?"}
+    ALERT -->|yes| SOAR["SOAR playbook<br/>YAML policy"]
+    SOAR --> ENF["block_ip · incident_report<br/>webhook · notify"]
+    ENF -.->|writes the blocklist| BLK
+
+    NORM --> LEDGER[("audit ledger<br/>SHA-256 chain")]
+    DROP --> LEDGER
+    DET --> LEDGER
+
+    LEDGER --> DB[("SQLite WAL")]
+    DB --> API["API at /api/v1"]
+    API --> UI["React dashboard<br/>LIVE / STALE / OFFLINE"]
+
+    REP -.->|blocks, scored separately| MODEL["trained model<br/>versioned artefact"]
+    MODEL -.-> API
+```
+
+Three things the diagram is making explicit, because each is a decision rather
+than an accident:
+
+* **The blocklist is checked before detection**, and the dotted line back from
+  the response actions is what makes it a loop rather than a log.
+* **The ledger chains events as they arrive** — before anything decides what
+  they mean, and whether or not a response suppressed them.
+* **The trained model is off to one side.** It scores replayed HDFS blocks. The
+  dashboard's live detection is the rule engine, and the two are never conflated.
 
 ## What's real right now
 
@@ -245,10 +309,22 @@ of detecting real attacks.
 - [x] SQLite persistence (WAL) replacing shared mutable lists
 - [x] Content-addressed hash chain with real tamper detection + a tamper demo
 - [x] Drain3 log parsing + a trained model measured on the HDFS_v1 benchmark
-- [ ] Wire the trained model into a dataset-replay mode
-- [ ] Real ingestion sources: syslog listener, file tailer, dataset replay
-- [ ] SOAR blocklist the pipeline actually enforces
-- [ ] Tests + CI
+- [x] Real ingestion sources: syslog listener, file tailer, dataset replay
+- [x] The trained model wired into replay, versioned, with a real retrain endpoint
+- [x] A SOAR blocklist the pipeline actually enforces
+- [x] Tests + CI + a detection-regression gate
+- [x] A dashboard that says when its data is stale or its backend is gone
+- [ ] Screenshots and demo GIFs
+- [ ] A green CI run — blocked on Actions billing, not on code
+- [ ] Kafka or Redis as the transport, replacing the in-process consumer
+- [ ] Server-sent events, replacing 2-second polling
+- [ ] Merkle proofs, so a single block can be verified without the whole chain
+- [ ] TypeScript
+
+The last four are honest wants, not work in progress. Each was considered and
+deliberately not done: a broker and SSE are infrastructure this does not yet
+need, Merkle proofs solve a problem one trusted writer does not have, and a
+day of TypeScript migration bought less than a day of tests and error handling.
 
 ## Measured results
 
@@ -558,6 +634,17 @@ CORS was `CORS(app)` — any origin — on an unauthenticated API that includes 
 destructive `POST /reset`, so any page open in the browser could have emptied
 the store. And the server bound `0.0.0.0`, publishing that same API to every
 machine on the network the moment the demo ran on café wifi.
+
+## Origins
+
+The first commit in this repository is the original one-day demo, imported
+source-only and unmodified: [`7a126fd`](../../commit/7a126fd) —
+*"chore: import course-project MVP (simulated infrastructure)"*. It is there on
+purpose. Every pull request since is a visible delta against it, and the
+capability table above is checkable against the code rather than taken on trust.
+
+If you want the short version of what changed, read the pull request
+descriptions in order. Each one leads with the thing that was wrong.
 
 ## License
 
