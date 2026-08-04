@@ -13,14 +13,59 @@ follows exists because that rule forced it.
 Sessions 0–11 are done and **merged to `main`**, which is green: 128 backend
 tests, 36 frontend tests, ruff, eslint, and both gates.
 
-Two things remain, and both need a human:
+**The repo stays private until the screenshots exist** — decided 2026-08-04.
+Publishing with a bare masthead was the alternative and was rejected; the images
+land first, then the flip. That also means **CI has still never produced a green
+run**, since Actions is refused for billing on a private repo. No CI badge until
+it has; the README carries a comment where the badge would go saying so.
 
-1. **Screenshots and the two demo GIFs.** The Chrome extension was not connected
-   during the build, so none exist — and none is referenced, because a broken
-   image on the masthead is worse than no image.
-2. **Flipping the repo public.** Left deliberately to the owner. It also unblocks
-   Actions billing, so **CI has still never produced a green run** — no CI badge
-   until it has, and the README says why in a comment where the badge would go.
+## The one thing left: screenshots and GIFs
+
+Everything below needs a browser, which is why it is not done — the Chrome
+extension was not connected during the build. **No image is referenced anywhere
+in the README**, so nothing is broken in the meantime.
+
+```bash
+make setup
+SOURCES=synthetic,replay:hdfs@20 make dev     # :5001 and :5173
+```
+
+Let it run 30–60 seconds so the timeline fills and a few alerts land, then:
+
+1. **`docs/assets/dashboard.png`** — the hero. Full page at 1440px wide. Best
+   after a `⚡ Simulate Attack → Brute Force`, so the Enforcement panel shows a
+   real block with a non-zero drop count.
+2. **`docs/assets/attack-demo.gif`** — 10–15s: press Simulate Attack, then scroll
+   to Enforcement as the dropped count climbs. This is the closed loop, and it
+   is the single most convincing thing in the project.
+3. **`docs/assets/tamper-demo.gif`** — 10–15s of `make demo` in a terminal:
+   verify passes, one event is corrupted with raw SQL, verify fails and names
+   the height, the event and both digests.
+
+QuickTime screen recording → two-pass palette, under 6 MB each:
+
+```bash
+ffmpeg -i in.mov -vf "fps=12,scale=1000:-1:flags=lanczos,palettegen" palette.png
+ffmpeg -i in.mov -i palette.png -lavfi "fps=12,scale=1000:-1:flags=lanczos [x]; [x][1:v] paletteuse" out.gif
+```
+
+Then add them under the masthead and in the Response section, set
+`dashboard.png` as the GitHub social preview (Settings → General → Social
+preview) so the link unfurls on LinkedIn, and flip the repo public:
+
+```bash
+gh auth switch -u Shlok014
+gh repo edit Shlok014/watchtower --visibility public --accept-visibility-change-consequences
+```
+
+Watch the first Actions run. If it is green, add the badge — and only then.
+
+**Check before publishing:** the demo address pool draws real Tor exit
+addresses for connection-provenance events (see `threatintel/pool.py`), so a
+screenshot could show a real relay operator's address beside a "suspicious IP"
+verdict. Events that fabricate forensic detail already use RFC 5737 ranges.
+Nothing in the repository itself contains a routable address — the feed cache is
+git-ignored — so this is a screenshot question only.
 
 ---
 
