@@ -542,6 +542,8 @@ cd backend
 #     event 7 was modified after it was recorded (stored 3e43b48f0e26…, recomputed 3218805befed…)
 ```
 
+![Ledger verification detects a deliberately tampered event](docs/assets/tamper-demo.gif)
+
 `tamper` issues a raw SQL UPDATE that bypasses the application, which is the
 only honest way to demonstrate the property — anything routed through the app
 would re-chain the block and detect nothing.

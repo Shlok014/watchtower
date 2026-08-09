@@ -86,7 +86,7 @@ the recording with the documented two-pass `ffmpeg` palette command.
 Expected: `docs/assets/attack-demo.gif` plays, is no larger than 6 MB, and
 shows the closed detection-to-enforcement loop.
 
-- [ ] **Step 4: Capture the ledger-tamper flow**
+- [x] **Step 4: Capture the ledger-tamper flow**
 
 Run `make demo`, record the actual verification-success, tamper, and
 verification-failure sequence, then palette-optimize it with `ffmpeg`.
@@ -124,7 +124,7 @@ Add this exact Markdown immediately after the closed-loop explanation:
 ![A brute-force alert causes an enforcement block and subsequent event drops](docs/assets/attack-demo.gif)
 ```
 
-- [ ] **Step 3: Add the tamper GIF beside the ledger explanation**
+- [x] **Step 3: Add the tamper GIF beside the ledger explanation**
 
 Add this exact Markdown immediately after the ledger verification explanation:
 
