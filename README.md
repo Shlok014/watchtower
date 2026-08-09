@@ -1,10 +1,11 @@
 # Watchtower
 
-**A security-operations MVP that distinguishes generated demo traffic from
-measured system behavior.** Multi-source log ingestion → deterministic live
-detection → application-layer response playbooks → a tamper-evident audit
-ledger. A separate Drain3 + scikit-learn model is trained and evaluated on HDFS
-replay. Flask + React.
+**A full-stack security-operations MVP for ingesting logs, detecting threats,
+orchestrating response playbooks, and preserving verifiable audit trails.**
+Watchtower combines multi-source ingestion, deterministic live detection,
+application-layer enforcement, and a tamper-evident ledger. A separate Drain3
+and scikit-learn pipeline is trained and evaluated on HDFS replay. Flask +
+React.
 
 ![Watchtower dashboard processing generated demo traffic and a completed HDFS replay, with alert and application-layer enforcement evidence](docs/assets/dashboard.png)
 
@@ -15,18 +16,11 @@ replay. Flask + React.
 
 [![CI](https://github.com/Shlok014/watchtower/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Shlok014/watchtower/actions/workflows/ci.yml)
 
-> ### Read this first
+> ### Designed for operations
 >
-> This started as a one-day college demo in which most of the infrastructure was
-> faked. The "Kafka stream" was a Python list, the "AI engine" was weighted
-> arithmetic with `random.uniform(-0.04, 0.04)` added under a comment reading
-> `# Randomness for realism`, the retrain endpoint was docstringed
-> `"""Fake model retraining endpoint."""` and invented an accuracy figure that
-> rose ~1% per button press, and CPU and memory were `random.uniform()` draws.
->
-> I am rebuilding it into the real thing, one layer at a time. The table below
-> says exactly what is real *today* — a security tool that lies about its own
-> capabilities would be an irony too far.
+> Watchtower presents source provenance, alert evidence, and action outcomes
+> across each stage of the pipeline. Its separate model-evaluation path keeps
+> live correlation rules and benchmark performance clear and traceable.
 
 ## Architecture
 
@@ -80,7 +74,7 @@ than an accident:
 * **The trained model is off to one side.** It scores replayed HDFS blocks. The
   dashboard's live detection is the rule engine, and the two are never conflated.
 
-## What's real right now
+## Implemented capabilities
 
 | Component | Current implementation | Status |
 |---|---|---|
@@ -96,10 +90,9 @@ than an accident:
 | **Persistence** | **SQLite in WAL mode.** One transaction per event covers the row, its alert, and its ledger block. The SOAR response runs only after that transaction commits, in its own transactions, so a broken playbook or slow webhook cannot erase the recorded event. Survives restart. Events retained 24h unless an alert cites them; the ledger is append-only and exempt. | ✅ **real** |
 | **Dashboard** | React + Chart.js. **LIVE / STALE / OFFLINE derived from the age of the last successful poll**, stale panels dimmed and labelled, an offline banner, and empty states that distinguish "no data" from "no backend". 16 components, an API client that throws on `!res.ok`, 45 Vitest tests. | ✅ **real** |
 
-Detection is a **rule engine**, deliberately. Three sliding-window features and a
-weighted sum is what SIEM correlation rules actually are; the dishonest part was
-never the rules, it was calling them "LogLM AI" and adding noise so the output
-looked like a model.
+Live detection is an intentionally deterministic **rule engine**. Three
+sliding-window features and versioned weights make outcomes explainable and
+repeatable; the separate machine-learning pipeline is reserved for HDFS replay.
 
 ## Ingestion sources
 
@@ -400,11 +393,9 @@ $ curl -X POST localhost:5001/api/v1/retrain
   delta_f1: 0.0
 ```
 
-**`delta_f1: 0.0`** is the point. Retraining on unchanged data changes nothing,
-and the endpoint says so. What it replaced returned
-`0.90 + (version - 2) * 0.01 + random.uniform(0, 0.02)` — an accuracy that rose
-about a point per button press and could never fall — under a docstring reading
-`"""Fake model retraining endpoint."""`.
+**`delta_f1: 0.0`** confirms that retraining on unchanged data produces an
+unchanged evaluation result. The endpoint returns measured fit time, versioned
+metadata, metrics, and deltas from the persisted prior model.
 
 Retraining takes under two seconds against 575,061 blocks because the feature
 matrix is cached alongside the template ids that define its columns. The two are
@@ -425,56 +416,20 @@ min/median/max of recent scores, and how many lines matched no template at all �
 a rising unmatched rate being the honest signal that the miner has drifted. No
 accuracy is claimed for live scoring anywhere.
 
-## The dashboard, and what it refuses to imply
+## Dashboard reliability
 
-The frontend was where the original demo lied most loudly, and the fixes are
-the same shape as the backend's.
+The React dashboard derives LIVE, STALE, and OFFLINE states from the age of the
+last successful API poll. It surfaces backend errors and distinguishes empty,
+filtered, and offline states.
 
-**The boot screen is gone.** It was a six-stage animation — "Initializing Kafka
-stream…", "Syncing blockchain ledger…" — that ticked each line to a green
-checkmark on a 400 ms timer without ever contacting the backend. It reported six
-subsystems healthy before a single request had been made, and played the
-identical sequence with the server switched off. What replaces it reflects
-exactly one thing: whether a real request to a real endpoint came back.
+The API client validates HTTP status and JSON content, surfaces backend errors,
+and prevents failures from being presented as empty data. Polling remains stable
+across filter changes and does not queue overlapping requests against a slow
+backend.
 
-**The header said `LIVE`. Always.** It now reads LIVE, STALE or OFFLINE, derived
-from the age of the last *successful* poll — including a separate one-second
-clock, so it degrades on its own while every request is failing rather than
-freezing on whatever it last rendered. Stale panels are dimmed and labelled;
-an offline banner says in words that what is on screen is the last data
-received, not the current state.
-
-**The API client used to swallow everything:**
-
-```js
-const fetchJSON = async (url, opts) => {
-  try { const r = await fetch(url, opts); return await r.json() } catch { return null }
-}
-```
-
-It never checked `res.ok`, so a 500 with a JSON body rendered as data; a 404's
-HTML body threw inside `.json()` and came back as `null`, which every caller
-read as "no data yet". Both failures looked exactly like a quiet system. The
-client now distinguishes *nothing answered* from *the backend said no*, carries
-the backend's own `detail` into the UI, and refuses a 200 that is not JSON.
-
-**Empty states say which thing is true.** "No logs ingested yet" and "No logs
-match these filters" were one message that also covered a dead backend.
-
-**Polling no longer churns.** The interval was torn down and recreated on every
-search keystroke, because `fetchAll` depended on `search`. Filters now live in a
-ref; the timer is created once, and a slow backend cannot queue polls behind
-itself.
-
-`App.jsx` went from 662 lines holding ten components to 16 components,
-`src/api/client.js` and `src/hooks/usePolling.js`. `VITE_API_URL` replaces the
-hardcoded localhost URL — the production bundle could previously only ever talk
-to the machine it was built on.
-
-No TypeScript, deliberately. A day of migration churn on an API-thin dashboard
-versus tests, error handling and honest states for the same day; a half-migrated
-`any`-riddled codebase is worse signal than clean JSX. JSDoc typedefs on the API
-client instead, and "TypeScript migration" stays on the roadmap unchecked.
+The frontend is organized into 16 focused components with a dedicated API
+client and polling hook. `VITE_API_URL` configures the API endpoint for local or
+deployed environments, and JSDoc typedefs document the API boundary.
 
 ## Storage
 
@@ -664,17 +619,6 @@ CORS was `CORS(app)` — any origin — on an unauthenticated API that includes 
 destructive `POST /reset`, so any page open in the browser could have emptied
 the store. And the server bound `0.0.0.0`, publishing that same API to every
 machine on the network the moment the demo ran on café wifi.
-
-## Origins
-
-The first commit in this repository is the original one-day demo, imported
-source-only and unmodified: [`7a126fd`](../../commit/7a126fd) —
-*"chore: import course-project MVP (simulated infrastructure)"*. It is there on
-purpose. Every pull request since is a visible delta against it, and the
-capability table above is checkable against the code rather than taken on trust.
-
-If you want the short version of what changed, read the pull request
-descriptions in order. Each one leads with the thing that was wrong.
 
 ## License
 
