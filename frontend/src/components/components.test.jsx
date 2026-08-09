@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import { ApiError } from '../api/client'
@@ -8,6 +8,7 @@ import { BlocklistPanel } from './BlocklistPanel'
 import { ConnectionBanner, ConnectionPill } from './ConnectionBanner'
 import { ConnectionGate } from './ConnectionGate'
 import { HealthPanel } from './HealthPanel'
+import { Header } from './Header'
 import { LogsPanel } from './LogsPanel'
 import { ModelPanel } from './ModelPanel'
 import { SOARPanel } from './SOARPanel'
@@ -120,6 +121,35 @@ describe('HealthPanel', () => {
   it('says so when it has no health data at all', () => {
     render(<HealthPanel health={null} />)
     expect(screen.getByText(/No health data received yet/)).toBeInTheDocument()
+  })
+
+  it('shows a finite replay as complete instead of stopped', () => {
+    render(
+      <HealthPanel
+        health={{
+          summary: { state: 'ok', label: 'All systems operational' },
+          components: [],
+          sources: [{ name: 'replay:hdfs', alive: false, completed: true }],
+        }}
+      />
+    )
+    expect(screen.getByText(/replay:hdfs ✓ complete/)).toBeInTheDocument()
+  })
+})
+
+describe('Header', () => {
+  it('exposes the attack menu state to assistive technology', () => {
+    render(<Header status="live" ageSeconds={0} onAttack={() => {}} onReset={() => {}} busy={false} />)
+
+    const trigger = screen.getByRole('button', { name: 'Simulate Attack' })
+    expect(trigger).toHaveAttribute('aria-haspopup', 'menu')
+    expect(trigger).toHaveAttribute('aria-expanded', 'false')
+
+    fireEvent.click(trigger)
+
+    expect(trigger).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByRole('menu')).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: 'Brute Force' })).toBeInTheDocument()
   })
 })
 

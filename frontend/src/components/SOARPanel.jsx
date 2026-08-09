@@ -1,10 +1,11 @@
+import { Workflow } from 'lucide-react'
 import { Panel, EmptyState } from './Panel'
 
 const ICON = { contained: '✓', action_failed: '✕', mitigated: '✓', open: '→' }
 
 export function SOARPanel({ actions, dimmed }) {
   return (
-    <Panel icon="🤖" title="SOAR Playbooks" dimmed={dimmed}
+    <Panel icon={Workflow} title="SOAR Playbooks" dimmed={dimmed}
            tag="enforced at the ingestion layer — no firewall"
            badge={`${actions.length} runs`} badgeColor="amber">
       <div className="panel-body">

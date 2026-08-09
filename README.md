@@ -1,17 +1,20 @@
 # Watchtower
 
-**A security operations pipeline that does not lie about itself.** Multi-source
-log ingestion → Drain3 template mining → detection → response playbooks that
-really enforce → a tamper-evident audit ledger. Flask + React + scikit-learn.
+**A security-operations MVP that distinguishes generated demo traffic from
+measured system behavior.** Multi-source log ingestion → deterministic live
+detection → application-layer response playbooks → a tamper-evident audit
+ledger. A separate Drain3 + scikit-learn model is trained and evaluated on HDFS
+replay. Flask + React.
+
+![Watchtower dashboard processing generated demo traffic and a completed HDFS replay, with alert and application-layer enforcement evidence](docs/assets/dashboard.png)
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776ab.svg)](backend/requirements.txt)
 [![Node 22+](https://img.shields.io/badge/node-22%2B-5fa04e.svg)](frontend/package.json)
-[![Tests](https://img.shields.io/badge/tests-141%20backend%20%2B%2043%20frontend-34d399.svg)](#tests)
+[![Tests](https://img.shields.io/badge/tests-141%20backend%20%2B%2045%20frontend-34d399.svg)](#tests)
 
-<!-- No CI badge until a workflow run is genuinely green. The 2026-08-04 run
-     executed on this private repository and failed on a stale frontend runtime
-     baseline plus formatting drift; the release branch repairs both. -->
+<!-- Add the workflow badge only after the release-media commit has a directly
+     observed successful GitHub Actions run. -->
 
 > ### Read this first
 >
@@ -92,7 +95,7 @@ than an accident:
 | **Audit ledger** | **Tamper-evident.** Every digest is recomputed from the live event row on verify, and the header digest covers height, timestamp, prev_hash and payload — so editing an event, rewriting a block, back-dating one, or deleting one is all detected and distinguished. | ✅ **real** |
 | Telemetry | Measured: per-stage p50/p95 via `perf_counter`, real RSS, real CPU, real 60s-window throughput, real uptime | ✅ real, measured |
 | **Persistence** | **SQLite in WAL mode.** One transaction per event covers the row, its alert, and its ledger block. The SOAR response runs only after that transaction commits, in its own transactions, so a broken playbook or slow webhook cannot erase the recorded event. Survives restart. Events retained 24h unless an alert cites them; the ledger is append-only and exempt. | ✅ **real** |
-| **Dashboard** | React + Chart.js. **LIVE / STALE / OFFLINE derived from the age of the last successful poll**, stale panels dimmed and labelled, an offline banner, and empty states that distinguish "no data" from "no backend". 16 components, an API client that throws on `!res.ok`, 43 Vitest tests. | ✅ **real** |
+| **Dashboard** | React + Chart.js. **LIVE / STALE / OFFLINE derived from the age of the last successful poll**, stale panels dimmed and labelled, an offline banner, and empty states that distinguish "no data" from "no backend". 16 components, an API client that throws on `!res.ok`, 45 Vitest tests. | ✅ **real** |
 
 Detection is a **rule engine**, deliberately. Three sliding-window features and a
 weighted sum is what SIEM correlation rules actually are; the dishonest part was
@@ -212,10 +215,13 @@ $ curl localhost:5001/api/v1/blocklist
   totals: {active_blocks: 1, events_dropped_lifetime: 10}
 ```
 
-Twelve events arrived, one alerted, the address was blocked, and the remaining
-ten were **really discarded** before the detector saw them. That is a detect →
-respond → enforce → observe loop with nothing simulated in the middle, and
-`test_blocked_address_produces_no_further_alerts` fails if any link breaks.
+Twelve synthetic events arrived, one alerted, the address was blocked, and the
+remaining ten were **really discarded** before the detector saw them. The input
+is simulated; the detect → respond → enforce → observe behavior is actual
+application behavior, and `test_blocked_address_produces_no_further_alerts`
+fails if any link breaks.
+
+![A brute-force alert causes an enforcement block and subsequent event drops](docs/assets/attack-demo.gif)
 
 Checked before detection, deliberately: running the rules first and throwing the
 verdict away would keep the alert count climbing for an address that is supposed
@@ -326,8 +332,8 @@ of detecting real attacks.
 - [x] A SOAR blocklist the pipeline actually enforces
 - [x] Tests + CI + a detection-regression gate
 - [x] A dashboard that says when its data is stale or its backend is gone
-- [ ] Screenshots and demo GIFs
-- [ ] A green CI run — required before the public release and CI badge
+- [x] Live dashboard evidence, an animated attack-to-enforcement capture, and a ledger-tamper demonstration
+- [x] A green CI run on `main` for the repaired baseline
 - [ ] Kafka or Redis as the transport, replacing the in-process consumer
 - [ ] Server-sent events, replacing 2-second polling
 - [ ] Merkle proofs, so a single block can be verified without the whole chain
@@ -360,8 +366,9 @@ blocks (2.93% anomalous), 45 mined templates, stratified 50/50 split at seed 42:
 | DecisionTree | yes | 0.9986 | 0.9987 | **0.9986** | 0.9996 |
 | IsolationForest | no | 0.0639 | 0.0640 | **0.0640** | 0.7014 |
 
-Pipeline throughput: **103,181 lines/sec** end to end (108.3s to parse and
-featurise 11.2M lines).
+Parse-and-featurise throughput: **103,181 lines/sec** (108.3s to parse and
+featurise 11.2M lines). This benchmark excludes storage, ledger hashing, live
+detection, alerting, and SOAR.
 
 Three things worth saying plainly rather than letting the table imply otherwise:
 
@@ -591,7 +598,7 @@ make dev       # API on :5001, dashboard on :5173
 
 | | |
 |---|---|
-| `make test` | 141 backend + 43 frontend |
+| `make test` | 141 backend + 45 frontend |
 | `make lint` | ruff, eslint, and the honesty gate |
 | `make bench` | regenerate `docs/METRICS.md` from a real run |
 | `make demo` | verify the ledger, corrupt one event with raw SQL, verify again |

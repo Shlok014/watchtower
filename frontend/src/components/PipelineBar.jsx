@@ -6,21 +6,21 @@ export function PipelineBar({ stats, health }) {
   const byName = Object.fromEntries((health?.components || []).map(c => [c.name, c]))
   const stateOf = (name) => byName[name]?.status || 'unknown'
   const nodes = [
-    { icon: '📡', label: 'Ingest', sub: `${stats?.total_logs ?? 0} ingested`, state: stateOf('Ingest Queue') },
-    { icon: '⚙️', label: 'Normalize', sub: `${stats?.logs_retained ?? 0} retained`, state: stateOf('Normalization') },
+    { icon: Radar, label: 'Ingest', sub: `${stats?.total_logs ?? 0} ingested`, state: stateOf('Ingest Queue') },
+    { icon: SlidersHorizontal, label: 'Normalize', sub: `${stats?.logs_retained ?? 0} retained`, state: stateOf('Normalization') },
     // Ledger before detection: that is the order the pipeline runs in. Events
     // are chained as they arrive, before anything decides what they mean.
-    { icon: '🔗', label: 'Audit Ledger', sub: `${stats?.total_blocks ?? 0} blocks`, state: stateOf('Audit Ledger') },
-    { icon: '🧠', label: 'Detection', sub: stats?.ruleset_version || '—', state: stateOf('Detection Engine') },
-    { icon: '🚨', label: 'Alerts', sub: `${stats?.total_alerts ?? 0} raised`, state: stateOf('Alert System') },
-    { icon: '🤖', label: 'SOAR', sub: `${stats?.events_dropped_lifetime ?? 0} dropped`, state: stateOf('SOAR Engine') },
+    { icon: Fingerprint, label: 'Audit ledger', sub: `${stats?.total_blocks ?? 0} blocks`, state: stateOf('Audit Ledger') },
+    { icon: Database, label: 'Detection', sub: stats?.ruleset_version || '—', state: stateOf('Detection Engine') },
+    { icon: BellRing, label: 'Alerts', sub: `${stats?.total_alerts ?? 0} raised`, state: stateOf('Alert System') },
+    { icon: ShieldCheck, label: 'Response', sub: `${stats?.events_dropped_lifetime ?? 0} dropped`, state: stateOf('SOAR Engine') },
   ]
   return (
     <div className="pipeline">
       {nodes.map((n, i) => (
         <span key={i} style={{ display: 'flex', alignItems: 'center' }}>
           <span className={`pipeline-node ${n.state}`} title={`status: ${n.state}`}>
-            <span className="pipeline-node-icon">{n.icon}</span>
+            <span className="pipeline-node-icon"><n.icon size={17} strokeWidth={1.7} /></span>
             <span>
               <div style={{ fontWeight: 700, fontSize: '0.88rem' }}>{n.label}</div>
               <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)', fontWeight: 400 }}>{n.sub}</div>
@@ -32,3 +32,4 @@ export function PipelineBar({ stats, health }) {
     </div>
   )
 }
+import { BellRing, Database, Fingerprint, Radar, ShieldCheck, SlidersHorizontal } from 'lucide-react'

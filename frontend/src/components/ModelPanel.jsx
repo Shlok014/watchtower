@@ -1,3 +1,4 @@
+import { BrainCircuit } from 'lucide-react'
 import { Panel, EmptyState } from './Panel'
 
 /* The model panel exists to keep two things apart that the original conflated.
@@ -8,7 +9,7 @@ export function ModelPanel({ model, onRetrain, retraining, dimmed }) {
   const current = model?.current
   const live = model?.live_scoring
   return (
-    <Panel icon="🧠" title="Detection" dimmed={dimmed}
+    <Panel icon={BrainCircuit} title="Detection" dimmed={dimmed}
            badge={current ? `model v${current.version}` : 'no model'}
            badgeColor={current ? 'purple' : 'amber'}
            actions={

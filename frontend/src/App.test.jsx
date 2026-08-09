@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiError } from './api/client'
@@ -161,9 +161,9 @@ describe('App', () => {
     api.simulateAttack.mockRejectedValue(
       new ApiError('HTTP 500 Internal Server Error', { status: 500, detail: 'store is read-only' })
     )
-    screen.getByRole('button', { name: /Simulate Attack/ }).click()
+    fireEvent.click(screen.getByRole('button', { name: /Simulate Attack/ }))
     await settle()
-    screen.getByRole('button', { name: /Brute Force/ }).click()
+    fireEvent.click(screen.getByRole('menuitem', { name: /Brute Force/ }))
     await settle()
 
     await waitFor(() =>

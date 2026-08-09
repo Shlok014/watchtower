@@ -1,9 +1,10 @@
+import { ScrollText } from 'lucide-react'
 import { Panel } from './Panel'
 
 export function LogsPanel({ logs, filters, setFilters, sources, dimmed, filtered }) {
   const set = (k) => (e) => setFilters((f) => ({ ...f, [k]: e.target.value }))
   return (
-    <Panel icon="📋" title="Live Logs Feed" dimmed={dimmed}
+    <Panel icon={ScrollText} title="Live Logs Feed" dimmed={dimmed}
            badge={`${logs.length} shown`} badgeColor="cyan">
       <div className="logs-controls">
         <input className="search-input" placeholder="🔍 Search logs…" value={filters.search} onChange={set('search')} />

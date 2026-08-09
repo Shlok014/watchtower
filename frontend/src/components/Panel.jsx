@@ -2,11 +2,12 @@
    treatment. Before this each of the ten components rebuilt the markup, and
    three of them had drifted. */
 export function Panel({ icon, title, tag, badge, badgeColor = 'cyan', actions, children, dimmed }) {
+  const Icon = icon
   return (
     <div className={`panel${dimmed ? ' panel-stale' : ''}`}>
       <div className="panel-header">
         <span className="panel-title">
-          <span className="panel-title-icon">{icon}</span> {title}
+          <span className="panel-title-icon"><Icon size={16} strokeWidth={1.75} /></span> {title}
           {tag && <span className="model-tag">{tag}</span>}
         </span>
         <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>

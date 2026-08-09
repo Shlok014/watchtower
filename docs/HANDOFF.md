@@ -10,33 +10,40 @@ Where the rebuild stands, and exactly where to pick it up.
 > restores formatting, corrects the affected documentation, and requires a
 > matching green CI run before visibility changes or a CI badge.
 
+> **2026-08-09 release evidence update.** The repaired baseline was merged in
+> PR #19 and its post-merge Actions run passed. `README.md` now embeds a
+> 1440 px dashboard capture from a live local run, an animated capture of one
+> simulated brute-force burst flowing into application-layer enforcement, and a
+> command-recorded ledger tamper demonstration. Neither shows third-party Tor
+> exit IP addresses. The synthetic input is labelled; alerting, blocklist writes,
+> and dropped-event counting are real application behavior. Add the CI badge
+> only after the follow-up release-media commit is observed green.
+
 The governing rule, which has driven every decision: **no number is reported
 unless it was measured, and anything not measured says so.** Most of what
 follows exists because that rule forced it.
 
 ---
 
-## The state in one line
+## Historical state at the original handoff
 
-**Everything was merged to `main`, which was clean but not verified green.** No
-open pull requests, no uncommitted work, nothing running. 18 PRs merged.
+**At the original handoff, `main` was clean but not verified green.** There were
+no open pull requests, no uncommitted work, nothing running, and 18 PRs merged.
 
     make lint    ruff · eslint · fabrication gate · published-numbers gate
-    make test    141 backend · 43 frontend
+    make test    141 backend · 45 frontend
     make perf    storage figures  →  docs/STORAGE.md
     make bench   detection figures →  docs/METRICS.md
     make demo    the tamper demo, which now restores the store afterwards
 
-**The visible release work needs a human at a browser:** screenshots and two demo
-GIFs, then README integration and publication. The recipe is at the end of this
-file. The Chrome extension was never connected during the original work, so no
-image exists and none is referenced yet.
+**The visual evidence is now available:** the README contains a live dashboard
+capture, an animated browser capture of the simulated attack-to-enforcement
+flow, and a terminal-recorded ledger-tamper GIF.
 
-**The repo stays private until the release assets and a green CI run exist** —
-your decision, 2026-08-04. Publishing with a bare masthead was the alternative
-and was rejected. CI ran while the repo was private and failed; no badge belongs
-in the README until a successful run for the final public-release commit is
-observed.
+**The repository stayed private until release assets and a green CI run existed**
+— the 2026-08-04 decision. The repaired baseline has since passed; it remains
+private only until the release-media commit is verified green and publication is
+performed. No badge belongs in the README until that matching run is observed.
 
 ## What happened after the sessions were merged
 
@@ -89,7 +96,7 @@ It now has, and **it failed twice before it passed**:
    that worked (`test`, `lint`, `bench`) are exactly the three that had been run
    before. Fixed with one exported `PYTHONPATH`.
 
-**The gate now passes.** On a virgin clone: `make setup`, 141 + 43 tests, `make
+**The gate now passes.** On a virgin clone: `make setup`, 141 + 45 tests, `make
 lint` with all three gates, `make verify`, `make bench`, and `make dev` bringing
 up both services. 988 events flowed (911 from real HDFS replay, 77 synthetic),
 an attack blocked 5 addresses and really dropped 18 events, and 989 ledger blocks
@@ -159,11 +166,14 @@ And a flaky test, at a measured 0.54%: it drove `/simulate-attack`, whose
 brute_force burst draws randomly from a pool two thirds `failed_login` — which
 has no playbook and blocks nothing.
 
-## The one thing left: screenshots and GIFs
+## Release evidence
 
-Everything below needs a browser, which is why it is not done — the Chrome
-extension was not connected during the build. **No image is referenced anywhere
-in the README**, so nothing is broken in the meantime.
+The release now includes `docs/assets/dashboard.png` from a live local dashboard,
+`docs/assets/attack-demo.gif` assembled from actual browser states during one
+simulated brute-force run, and `docs/assets/tamper-demo.gif` from `make demo`.
+All three are referenced by the README. The input burst is synthetic; its
+resulting alert, blocklist write, and later dropped events come from the running
+application.
 
 ```bash
 make setup
@@ -172,13 +182,12 @@ SOURCES=synthetic,replay:hdfs@20 make dev     # :5001 and :5173
 
 Let it run 30–60 seconds so the timeline fills and a few alerts land, then:
 
-1. **`docs/assets/dashboard.png`** — the hero. Full page at 1440px wide. Best
-   after a `⚡ Simulate Attack → Brute Force`, so the Enforcement panel shows a
-   real block with a non-zero drop count.
-2. **`docs/assets/attack-demo.gif`** — 10–15s: press Simulate Attack, then scroll
-   to Enforcement as the dropped count climbs. This is the closed loop, and it
-   is the single most convincing thing in the project.
-3. **`docs/assets/tamper-demo.gif`** — 10–15s of `make demo` in a terminal:
+1. **`docs/assets/dashboard.png`** — complete. It is a 1440 px capture from a
+   live dashboard run with alerts and enforced drops.
+2. **`docs/assets/attack-demo.gif`** — complete. An 11-second browser capture
+   shows one synthetic brute-force burst, its alert evidence, and the resulting
+   ingestion-layer Enforcement table with a non-zero dropped count.
+3. **`docs/assets/tamper-demo.gif`** — complete: 10–15s of `make demo` in a terminal:
    verify passes, one event is corrupted with raw SQL, verify fails and names
    the height, the event and both digests.
 
@@ -189,10 +198,10 @@ ffmpeg -i in.mov -vf "fps=12,scale=1000:-1:flags=lanczos,palettegen" palette.png
 ffmpeg -i in.mov -i palette.png -lavfi "fps=12,scale=1000:-1:flags=lanczos [x]; [x][1:v] paletteuse" out.gif
 ```
 
-Then add them under the masthead and in the Response section, set
-`dashboard.png` as the GitHub social preview (Settings → General → Social
-preview) so the link unfurls on LinkedIn. Push the release commit and verify its
-green CI run before flipping the repo public:
+The README already embeds the dashboard under its masthead and the two GIFs
+beside their relevant behavior. Set `dashboard.png` as the GitHub social preview
+(Settings → General → Social preview) so the link unfurls on LinkedIn. Push the
+release commit and verify its green CI run before flipping the repo public:
 
 ```bash
 gh auth switch -u Shlok014
@@ -274,7 +283,7 @@ from `origin/main`'s schema.
 The six-stage boot animation is gone. `LIVE` was a string literal; it is now
 LIVE/STALE/OFFLINE from the age of the last successful poll. The API client no
 longer swallows every error. Empty states distinguish "no data" from "no
-backend". `App.jsx` 662 lines → 16 components. **43 Vitest tests**, including App's own gate → dashboard → offline transitions.
+backend". `App.jsx` 662 lines → 16 components. **45 Vitest tests**, including App's own gate → dashboard → offline transitions.
 
 ### Session 10 — tooling and the gates
 `make help` is the interface. `scripts/dev.sh` replaces `start.sh`, whose
@@ -305,18 +314,18 @@ IsolationForest moved from 0.0775 and throughput from 66,273 lines/sec when the
 split definition was unified across the project. Both figures are this run's real
 measurements; nothing was hand-edited.
 
-Tests: **141 backend + 43 frontend**.
+Tests: **141 backend + 45 frontend**.
 
 ---
 
 ## Pick up here
 
 Everything was merged at the time of this historical handoff. The current
-release also needs the CI and documentation corrections recorded above.
+release corrections and evidence status are recorded at the top of this file.
 
-**1. Take the screenshots and the two GIFs.** The full recipe — what to capture,
-in what state, the `ffmpeg` two-pass palette invocation to keep each under 6 MB,
-and where the files go — is in "The one thing left" above. Roughly:
+**1. The release evidence is complete.** The dashboard PNG, attack GIF, and
+ledger GIF are already integrated. The capture recipe above remains available
+when a fresh recording is useful.
 
 ```bash
 make setup
@@ -324,10 +333,11 @@ SOURCES=synthetic,replay:hdfs@20 make dev     # :5001 and :5173
 ```
 
 Let it run 30–60 seconds, fire a `⚡ Simulate Attack → Brute Force` so the
-Enforcement panel shows a real block with a non-zero drop count, then capture.
+Enforcement panel shows a real application-layer block with a non-zero drop
+count, then recapture if needed.
 
-**2. Add them to the README** under the masthead and in the Response section, and
-set `dashboard.png` as the GitHub social preview so the link unfurls on LinkedIn.
+**2. Set `dashboard.png` as the GitHub social preview** so the link unfurls on
+LinkedIn. The image is already embedded under the README masthead.
 
 **3. Push the release commit and verify a matching green CI run, then flip the
 repo public.**

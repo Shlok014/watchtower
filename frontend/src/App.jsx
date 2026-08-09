@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { Ban, BellRing, Bot, ChartLine, CircleAlert, Database, Link2, ShieldAlert } from 'lucide-react'
 
 import { ApiError, api } from './api/client'
 import { LIVE, OFFLINE, usePolling } from './hooks/usePolling'
@@ -207,24 +208,30 @@ export default function App() {
       <PipelineBar stats={stats} health={health} />
       <HealthPanel health={health} dimmed={dimmed} />
 
+      <div className="grid-3 section-row investigation-row">
+        <LogsPanel logs={logs} filters={filters} setFilters={setFilters}
+                   sources={stats?.sources || []} dimmed={dimmed} filtered={filtered} />
+        <AlertsPanel alerts={alerts} dimmed={dimmed} />
+      </div>
+
       <div className="stats-grid">
-        <StatCard icon="📊" value={stats?.total_logs} label="Total Logs Ingested" color="cyan"
+        <StatCard icon={ChartLine} value={stats?.total_logs} label="Total Logs Ingested" color="cyan"
                   title={stats?.retention_note} />
-        <StatCard icon="🚨" value={stats?.total_alerts} label="Alerts Raised" color="red" />
-        <StatCard icon="‼️" value={stats?.critical_alerts} label="Critical Alerts" color="critical" />
-        <StatCard icon="🚫" value={stats?.events_dropped_lifetime} label="Events Dropped" color="amber"
+        <StatCard icon={BellRing} value={stats?.total_alerts} label="Alerts Raised" color="red" />
+        <StatCard icon={CircleAlert} value={stats?.critical_alerts} label="Critical Alerts" color="critical" />
+        <StatCard icon={Ban} value={stats?.events_dropped_lifetime} label="Events Dropped" color="amber"
                   title="Suppressed by the blocklist before detection ran" />
-        <StatCard icon="🤖" value={stats?.soar_actions_count} label="Playbooks Run" color="green" />
-        <StatCard icon="🔗" value={stats?.total_blocks} label="Ledger Blocks" color="purple" />
+        <StatCard icon={Bot} value={stats?.soar_actions_count} label="Playbooks Run" color="green" />
+        <StatCard icon={Link2} value={stats?.total_blocks} label="Ledger Blocks" color="purple" />
       </div>
 
       <div className="grid-2 section-row">
-        <Panel icon="📈" title="Logs & Alerts Timeline" dimmed={dimmed}>
+        <Panel icon={ChartLine} title="Logs & Alerts Timeline" dimmed={dimmed}>
           <div className="panel-body"><div className="chart-container">
             <TimelineChart data={stats?.logs_over_time} />
           </div></div>
         </Panel>
-        <Panel icon="🎯" title="Alert Severity Distribution" dimmed={dimmed}>
+        <Panel icon={ShieldAlert} title="Alert Severity Distribution" dimmed={dimmed}>
           <div className="panel-body"><div className="chart-container">
             <AlertDistChart data={stats?.alert_distribution} />
           </div></div>
@@ -233,7 +240,7 @@ export default function App() {
 
       <div className="section-row">
         <Panel
-          icon="📊"
+          icon={Database}
           title="Event Type Distribution"
           tag={
             stats?.distribution_window
@@ -246,12 +253,6 @@ export default function App() {
             <EventDistChart data={stats?.event_distribution} />
           </div></div>
         </Panel>
-      </div>
-
-      <div className="grid-3 section-row">
-        <LogsPanel logs={logs} filters={filters} setFilters={setFilters}
-                   sources={stats?.sources || []} dimmed={dimmed} filtered={filtered} />
-        <AlertsPanel alerts={alerts} dimmed={dimmed} />
       </div>
 
       <div className="grid-2 section-row">

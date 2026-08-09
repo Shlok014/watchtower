@@ -1,8 +1,9 @@
+import { Fingerprint } from 'lucide-react'
 import { Panel, EmptyState } from './Panel'
 
 export function LedgerPanel({ blocks, onVerify, result, verifying, dimmed }) {
   return (
-    <Panel icon="🔗" title="Audit Ledger" dimmed={dimmed}
+    <Panel icon={Fingerprint} title="Audit Ledger" dimmed={dimmed}
            tag="tamper-evident SHA-256 chain"
            badge={`${blocks.length} shown`} badgeColor="cyan"
            actions={
