@@ -19,6 +19,10 @@ Where the rebuild stands, and exactly where to pick it up.
 > and dropped-event counting are real application behavior. Add the CI badge
 > only after the follow-up release-media commit is observed green.
 
+> **2026-08-09 publication update.** PR #20 merged as `b92dd21`; its `main`
+> workflow run 31314295495 passed both jobs. The repository is public under
+> `Shlok014/watchtower`, and the README now carries the CI badge for `main`.
+
 The governing rule, which has driven every decision: **no number is reported
 unless it was measured, and anything not measured says so.** Most of what
 follows exists because that rule forced it.

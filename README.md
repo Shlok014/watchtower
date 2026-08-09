@@ -13,8 +13,7 @@ replay. Flask + React.
 [![Node 22+](https://img.shields.io/badge/node-22%2B-5fa04e.svg)](frontend/package.json)
 [![Tests](https://img.shields.io/badge/tests-141%20backend%20%2B%2045%20frontend-34d399.svg)](#tests)
 
-<!-- Add the workflow badge only after the release-media commit has a directly
-     observed successful GitHub Actions run. -->
+[![CI](https://github.com/Shlok014/watchtower/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Shlok014/watchtower/actions/workflows/ci.yml)
 
 > ### Read this first
 >
