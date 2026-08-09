@@ -287,8 +287,10 @@ def main(argv=None) -> int:
     r = measure()
     write_markdown(r)
     print(f"\nWrote {OUT_MD} and {OUT_JSON}\n")
-    print(f"  concurrent writes  {r['writes']['rows_per_second']:>7,} rows/sec "
-          f"({len(r['writes']['errors'])} errors)")
+    print(
+        f"  concurrent writes  {r['writes']['rows_per_second']:>7,} rows/sec "
+        f"({len(r['writes']['errors'])} errors)"
+    )
     print(f"  pipeline benign    {r['pipeline']['benign_per_second']:>7,} events/sec")
     print(f"  pipeline alerting  {r['pipeline']['alerting_per_second']:>7,} events/sec")
     print(f"  GET /stats         {r['stats_endpoint']['median_ms']:>7} ms median")

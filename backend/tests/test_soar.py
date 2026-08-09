@@ -658,9 +658,7 @@ def test_steps_are_recorded_as_they_complete():
     counts = []
 
     def watching(ctx):
-        counts.append(
-            db.connect().execute("SELECT count(*) FROM soar_steps").fetchone()[0]
-        )
+        counts.append(db.connect().execute("SELECT count(*) FROM soar_steps").fetchone()[0])
         return actions.Outcome(actions.EXECUTED, "noted")
 
     import pytest as _pytest
