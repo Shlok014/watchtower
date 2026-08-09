@@ -17,6 +17,13 @@ public GitHub repository with its first CI result observed.
 - Add the media to the README immediately after the masthead and in the
   Response section, with descriptive alt text and no claims beyond what the
   recorded UI demonstrates.
+- Repair the proven CI blockers before release: Node 22 is the frontend floor,
+  the lockfile must install cleanly under that runtime, and every committed
+  Python file must satisfy Ruff's pinned `0.16.2` formatter gate.
+- Correct documentation that claimed private Actions could not run, that the
+  event transaction included a SOAR response, or that no routable address was
+  committed. Add a third-party notice excluding Loghub sample data from the MIT
+  license and preserving Loghub attribution.
 - Run the existing lint, test, ledger-verification, published-numbers, and
   media-inspection gates. Use a separate Sol review as the independent release
   gate.
@@ -41,12 +48,11 @@ kept under 6 MB.
 ## Repository and Release Flow
 
 Work occurs on `codex/release-assets` in an isolated worktree. The release
-commit contains only the generated media, README references, and this release
-documentation. After local gates and the Sol audit pass, it is pushed with the
-active `Shlok014` account and merged to `main`. The repository is then made
-public. The first workflow run is monitored; a passing result permits a second
-small commit adding the CI badge, while any failure is investigated before the
-badge is added.
+commit contains the CI repair, truthful release documentation, and generated
+media. After local gates and the Sol audit pass, it is pushed with the active
+`Shlok014` account and merged to `main`. The resulting private-repository
+workflow must pass for that exact commit before the repository is made public;
+that passing result permits a second small commit adding the CI badge.
 
 ## Acceptance Criteria
 

@@ -4,7 +4,7 @@
 
 **Goal:** Publish Watchtower with authentic, privacy-safe visual evidence and a verified first CI result.
 
-**Architecture:** The application itself remains unchanged. A release worktree generates three documentation assets from real runtime behavior, the README embeds them, and existing quality gates plus an independent audit protect the public-release step.
+**Architecture:** The application behavior remains unchanged. A release worktree repairs the CI runtime contract and release documentation, generates three media assets from real runtime behavior, then relies on existing quality gates plus an independent audit before publication.
 
 **Tech Stack:** Flask, React/Vite, Make, pytest, Vitest, Ruff, GitHub Actions, ffmpeg.
 
@@ -15,26 +15,45 @@
 - Generate dashboard and terminal evidence from actual application commands, not fabricated output.
 - Keep each GIF at or below 6 MB.
 - Add the CI badge only after a directly observed successful workflow run.
+- CI uses Node 22, which matches the frontend manifest and lockfile, and Ruff
+  `0.16.2`, which matches local setup.
+- Loghub sample data is outside the MIT license and retains upstream attribution.
 
 ---
 
-### Task 1: Establish a verified release baseline
+### Task 1: Repair the verified CI baseline
 
 **Files:**
-- Modify: no tracked files
-- Verify: `Makefile`, `.github/workflows/ci.yml`, `docs/HANDOFF.md`
+- Modify: `.github/workflows/ci.yml`
+- Modify: `frontend/package.json`
+- Modify: `frontend/package-lock.json`
+- Modify: five Ruff-formatted Python files
 
-- [ ] **Step 1: Verify the worktree and GitHub identity**
+- [x] **Step 1: Reproduce the recorded CI failures**
 
-Run: `git status --porcelain=v1 --branch` and `gh auth status`
+Run: `gh run view 30946955577 --repo Shlok014/watchtower --log-failed`
 
-Expected: branch is `codex/release-assets`, no working-tree changes, and the active GitHub account is `Shlok014`.
+Expected: the frontend fails before tests under Node 20 and the backend format
+gate names the five unformatted files.
 
-- [ ] **Step 2: Run the release-quality baseline**
+- [x] **Step 2: Set the declared Node floor to 22 and regenerate the lockfile**
 
-Run: `make lint && make test && make verify`
+Run: Node 22's `npm install --package-lock-only`, then `npm ci` under Node 22.
 
-Expected: all established lint, fabricated-claim, published-number, backend, frontend, and ledger-verification checks pass before media generation.
+Expected: a clean Node 22 install succeeds without lockfile drift.
+
+- [x] **Step 3: Apply Ruff's deterministic formatting to the five reported files**
+
+Run: `ruff format` for only the reported paths, then `make lint`.
+
+Expected: the formatter check passes with no behavior change.
+
+- [x] **Step 4: Run the full release-quality baseline**
+
+Run: `make lint && make test && make verify && cd frontend && npm run build`.
+
+Expected: all lint, fabricated-claim, published-number, backend, frontend,
+build, and ledger-verification checks pass before media generation.
 
 ### Task 2: Generate and inspect authentic media
 

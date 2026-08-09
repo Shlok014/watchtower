@@ -6,15 +6,12 @@ really enforce → a tamper-evident audit ledger. Flask + React + scikit-learn.
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776ab.svg)](backend/requirements.txt)
-[![Node 20+](https://img.shields.io/badge/node-20%2B-5fa04e.svg)](frontend/package.json)
+[![Node 22+](https://img.shields.io/badge/node-22%2B-5fa04e.svg)](frontend/package.json)
 [![Tests](https://img.shields.io/badge/tests-141%20backend%20%2B%2043%20frontend-34d399.svg)](#tests)
 
-<!-- No CI badge. GitHub Actions has been refused for billing since the
-     workflow landed, so no run has ever gone green. The whole backend job was
-     reproduced locally on a clean install instead (see Tests), but a badge
-     claiming a passing build that never ran would be exactly the kind of
-     decoration this project exists to remove. It goes up the day a run is
-     genuinely green, and not before. -->
+<!-- No CI badge until a workflow run is genuinely green. The 2026-08-04 run
+     executed on this private repository and failed on a stale frontend runtime
+     baseline plus formatting drift; the release branch repairs both. -->
 
 > ### Read this first
 >
@@ -94,7 +91,7 @@ than an accident:
 | **SOAR** | **A closed loop.** YAML playbooks; `block_ip` writes to a blocklist the consumer checks *before* detection, so a blocked address really is suppressed and the drops are counted. Webhooks POST for real. Incident reports are real files citing the ledger blocks that cover their evidence. Alert status is earned: `contained` / `action_failed`, never assumed. | ✅ **real** — enforcement is at the ingestion layer, not a firewall |
 | **Audit ledger** | **Tamper-evident.** Every digest is recomputed from the live event row on verify, and the header digest covers height, timestamp, prev_hash and payload — so editing an event, rewriting a block, back-dating one, or deleting one is all detected and distinguished. | ✅ **real** |
 | Telemetry | Measured: per-stage p50/p95 via `perf_counter`, real RSS, real CPU, real 60s-window throughput, real uptime | ✅ real, measured |
-| **Persistence** | **SQLite in WAL mode.** One transaction per event covers the row, its alert, its SOAR record and its ledger block. Survives restart. Events retained 24h unless an alert cites them; the ledger is append-only and exempt. | ✅ **real** |
+| **Persistence** | **SQLite in WAL mode.** One transaction per event covers the row, its alert, and its ledger block. The SOAR response runs only after that transaction commits, in its own transactions, so a broken playbook or slow webhook cannot erase the recorded event. Survives restart. Events retained 24h unless an alert cites them; the ledger is append-only and exempt. | ✅ **real** |
 | **Dashboard** | React + Chart.js. **LIVE / STALE / OFFLINE derived from the age of the last successful poll**, stale panels dimmed and labelled, an offline banner, and empty states that distinguish "no data" from "no backend". 16 components, an API client that throws on `!res.ok`, 43 Vitest tests. | ✅ **real** |
 
 Detection is a **rule engine**, deliberately. Three sliding-window features and a
@@ -119,6 +116,21 @@ python -m watchtower run --sources synthetic,syslog,file:/var/log/system.log,rep
 | `syslog[:port]` | UDP listener, RFC 3164 and RFC 5424, default port **5514** |
 | `file:<path>` | `tail -F` with inode-based rotation detection |
 | `replay:<hdfs\|openssh>[@rate]` | Streams a real loghub dataset through the live pipeline |
+
+### Sample-data terms
+
+The small HDFS and OpenSSH fixtures in `backend/data/samples/` come from
+[Loghub](https://github.com/logpai/loghub). They are third-party data and are
+excluded from this repository's MIT license; their use and redistribution are
+subject to Loghub's terms. Loghub describes its datasets as available for
+research or academic work and asks users and distributors to link the upstream
+repository and cite its paper where applicable. See
+[the third-party notice](docs/THIRD_PARTY_NOTICES.md) before reusing them.
+
+The committed OpenSSH sample contains real-looking, routable addresses from the
+source dataset. Treat it as research data, not evidence about those addresses;
+public screenshots use an empty feed cache so generated demo addresses are RFC
+5737 documentation ranges.
 
 **Replay is the one that matters.** A 2008 HDFS line keeps its 2008 timestamp in
 `ts_ms`; `ingested_ts_ms` is when this process saw it. Detection windows and the
@@ -315,7 +327,7 @@ of detecting real attacks.
 - [x] Tests + CI + a detection-regression gate
 - [x] A dashboard that says when its data is stale or its backend is gone
 - [ ] Screenshots and demo GIFs
-- [ ] A green CI run — blocked on Actions billing, not on code
+- [ ] A green CI run — required before the public release and CI badge
 - [ ] Kafka or Redis as the transport, replacing the in-process consumer
 - [ ] Server-sent events, replacing 2-second polling
 - [ ] Merkle proofs, so a single block can be verified without the whole chain
