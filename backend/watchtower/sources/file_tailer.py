@@ -235,10 +235,7 @@ class FileTailSource(ThreadedSource):
         """Discard a held fragment, loudly and countably."""
         if pending:
             self.discarded_partials += 1
-            print(
-                f"⚠️  {self.path}: discarding {len(pending)} bytes of an incomplete "
-                f"line — {why}"
-            )
+            print(f"⚠️  {self.path}: discarding {len(pending)} bytes of an incomplete line — {why}")
         return ""
 
     def stats(self) -> dict:

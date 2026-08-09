@@ -45,7 +45,7 @@ $(PY):
 	python3 -m venv backend/.venv
 	$(PIP) install --upgrade pip --quiet
 	$(PIP) install -r backend/requirements.txt --quiet
-	$(PIP) install pytest pytest-cov ruff --quiet
+	$(PIP) install pytest pytest-cov ruff==0.16.2 --quiet
 
 frontend/node_modules: frontend/package-lock.json
 	cd frontend && npm ci

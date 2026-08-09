@@ -100,9 +100,7 @@ def run_response(alert: dict) -> dict | None:
             repos.record_soar_step(conn, exec_id[0], position, step)
 
     try:
-        response = soar.respond(
-            store_db.connect(), alert, on_step=on_step, on_start=on_start
-        )
+        response = soar.respond(store_db.connect(), alert, on_step=on_step, on_start=on_start)
     except Exception as exc:
         # A broken playbook, a vanished alert row, anything. The event is
         # already safe; say what failed and leave the partial record standing.
@@ -117,9 +115,7 @@ def run_response(alert: dict) -> dict | None:
 
     try:
         with store_db.write() as conn:
-            repos.finish_soar(
-                conn, exec_id[0], response["status"], response["selection_time_us"]
-            )
+            repos.finish_soar(conn, exec_id[0], response["status"], response["selection_time_us"])
             if response["status"] != "open":
                 repos.set_alert_status(conn, alert["id"], response["status"])
                 alert["status"] = response["status"]

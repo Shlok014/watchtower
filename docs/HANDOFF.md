@@ -2,6 +2,14 @@
 
 Where the rebuild stands, and exactly where to pick it up.
 
+> **2026-08-09 release correction.** This handoff is a historical snapshot, not
+> a proof that `main` was release-ready. The 2026-08-04 private-repository CI
+> run did execute and failed: the frontend lockfile was incompatible with its
+> Node 20 runtime, and five files failed Ruff's format check. It was not blocked
+> by Actions billing. The release branch raises the frontend baseline to Node 22,
+> restores formatting, corrects the affected documentation, and requires a
+> matching green CI run before visibility changes or a CI badge.
+
 The governing rule, which has driven every decision: **no number is reported
 unless it was measured, and anything not measured says so.** Most of what
 follows exists because that rule forced it.
@@ -10,8 +18,8 @@ follows exists because that rule forced it.
 
 ## The state in one line
 
-**Everything is merged to `main`, which is clean and green.** No open pull
-requests, no uncommitted work, nothing running. 18 PRs merged.
+**Everything was merged to `main`, which was clean but not verified green.** No
+open pull requests, no uncommitted work, nothing running. 18 PRs merged.
 
     make lint    ruff · eslint · fabrication gate · published-numbers gate
     make test    141 backend · 43 frontend
@@ -19,18 +27,16 @@ requests, no uncommitted work, nothing running. 18 PRs merged.
     make bench   detection figures →  docs/METRICS.md
     make demo    the tamper demo, which now restores the store afterwards
 
-**Exactly one thing is left, and it needs a human at a browser:** screenshots and
-two demo GIFs, then flipping the repo public. The recipe is at the end of this
-file. The Chrome extension was never connected during any of this work, so no
-image exists and **none is referenced anywhere** — nothing is broken in the
-meantime.
+**The visible release work needs a human at a browser:** screenshots and two demo
+GIFs, then README integration and publication. The recipe is at the end of this
+file. The Chrome extension was never connected during the original work, so no
+image exists and none is referenced yet.
 
-**The repo stays private until those images exist** — your decision, 2026-08-04.
-Publishing with a bare masthead was the alternative and was rejected. That also
-means **CI has still never produced a green run**, since Actions is refused for
-billing on a private repo; the whole backend job was reproduced locally instead,
-on a clean Python 3.13 install. No CI badge until a run is genuinely green, and
-the README carries a comment where the badge would go explaining why.
+**The repo stays private until the release assets and a green CI run exist** —
+your decision, 2026-08-04. Publishing with a bare masthead was the alternative
+and was rejected. CI ran while the repo was private and failed; no badge belongs
+in the README until a successful run for the final public-release commit is
+observed.
 
 ## What happened after the sessions were merged
 
@@ -185,21 +191,24 @@ ffmpeg -i in.mov -i palette.png -lavfi "fps=12,scale=1000:-1:flags=lanczos [x]; 
 
 Then add them under the masthead and in the Response section, set
 `dashboard.png` as the GitHub social preview (Settings → General → Social
-preview) so the link unfurls on LinkedIn, and flip the repo public:
+preview) so the link unfurls on LinkedIn. Push the release commit and verify its
+green CI run before flipping the repo public:
 
 ```bash
 gh auth switch -u Shlok014
+gh run watch RUN_ID --repo Shlok014/watchtower --exit-status
 gh repo edit Shlok014/watchtower --visibility public --accept-visibility-change-consequences
 ```
 
-Watch the first Actions run. If it is green, add the badge — and only then.
+The successful run must match the release commit. Add the badge only then.
 
 **Check before publishing:** the demo address pool draws real Tor exit
 addresses for connection-provenance events (see `threatintel/pool.py`), so a
 screenshot could show a real relay operator's address beside a "suspicious IP"
 verdict. Events that fabricate forensic detail already use RFC 5737 ranges.
-Nothing in the repository itself contains a routable address — the feed cache is
-git-ignored — so this is a screenshot question only.
+The feed cache is git-ignored, but the committed OpenSSH sample includes
+routable addresses from Loghub. This is both a screenshot and a data-provenance
+question; see `docs/THIRD_PARTY_NOTICES.md`.
 
 ---
 
@@ -212,8 +221,9 @@ security bugs rather than taste: `CORS(app)` allowed every origin against an
 unauthenticated API with a destructive `POST /reset`, and the server bound
 `0.0.0.0`, publishing that API to every machine on the network.
 
-**The CI honesty gate had never run and was wrong twice.** Actions has been
-refused for billing since the workflow landed, so nothing had executed it.
+**The CI honesty gate needed a real CI run.** A private-repository Actions run
+executed later and exposed the formatter and frontend-runtime drift recorded in
+the release correction above.
 `grep -rn .` emits `./`-prefixed paths under GNU grep and bare paths under BSD
 grep, which broke its own allowlist; and the retired-names check flagged the six
 lines of prose that *retire* them — "there is no proof-of-work, and it is not
@@ -301,7 +311,8 @@ Tests: **141 backend + 43 frontend**.
 
 ## Pick up here
 
-Everything is merged. There is one task, and it is the last one.
+Everything was merged at the time of this historical handoff. The current
+release also needs the CI and documentation corrections recorded above.
 
 **1. Take the screenshots and the two GIFs.** The full recipe — what to capture,
 in what state, the `ffmpeg` two-pass palette invocation to keep each under 6 MB,
@@ -318,7 +329,8 @@ Enforcement panel shows a real block with a non-zero drop count, then capture.
 **2. Add them to the README** under the masthead and in the Response section, and
 set `dashboard.png` as the GitHub social preview so the link unfurls on LinkedIn.
 
-**3. Flip the repo public.**
+**3. Push the release commit and verify a matching green CI run, then flip the
+repo public.**
 
 ```bash
 gh auth switch -u Shlok014      # NOT shlok-sylox — see Environment notes
@@ -326,21 +338,22 @@ gh repo edit Shlok014/watchtower --visibility public \
    --accept-visibility-change-consequences
 ```
 
-**4. Watch the first Actions run.** Public repos get free minutes, so this will
-be the first time CI has ever executed. If it is green, add the badge — and only
-then. The README has a comment where it goes.
+**4. Add the CI badge only after that matching run is green.** Private Actions
+already executed and failed on the original `main`; repository visibility does
+not itself start this workflow.
 
 ### Before publishing
 
 The demo address pool draws **real Tor exit addresses** for connection-provenance
 events (`threatintel/pool.py`), so a screenshot could put a real relay operator's
 address beside a "suspicious IP" verdict. Events that fabricate forensic detail
-already use RFC 5737 ranges, and nothing in the repository itself contains a
-routable address — the feed cache is git-ignored — so this is a framing question
-about the images, not a code one.
+already use RFC 5737 ranges. The committed OpenSSH sample also contains routable
+addresses from Loghub, so both public media and bundled-data provenance need
+review.
 
-A pre-publish sweep found no secrets, no local paths, and no routable addresses
-outside documentation ranges.
+A limited pre-publish sweep found no secrets or local paths. It did not perform a
+full-history secret scan, and the committed Loghub OpenSSH sample includes
+routable addresses.
 
 ---
 

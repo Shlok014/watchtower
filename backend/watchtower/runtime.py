@@ -120,9 +120,7 @@ def dead() -> list[str]:
 def finished() -> list[str]:
     """Sources that ran to completion. A replay reaching EOF is not a fault."""
     return [
-        spec
-        for spec, s in running().items()
-        if not s.alive() and getattr(s, "completed", False)
+        spec for spec, s in running().items() if not s.alive() and getattr(s, "completed", False)
     ]
 
 
