@@ -9,7 +9,7 @@ React.
 
 ![Watchtower dashboard processing generated demo traffic and a completed HDFS replay, with alert and application-layer enforcement evidence](docs/assets/dashboard.png)
 
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![License](https://img.shields.io/github/license/Shlok014/watchtower)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776ab.svg)](backend/requirements.txt)
 [![Node 22+](https://img.shields.io/badge/node-22%2B-5fa04e.svg)](frontend/package.json)
 [![Tests](https://img.shields.io/badge/tests-141%20backend%20%2B%2045%20frontend-34d399.svg)](#tests)
