@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
+import { Bug, Crosshair, Lock, ShieldCheck, Trash2, UserSearch, Waves, Zap } from 'lucide-react'
 import { ConnectionPill } from './ConnectionBanner'
 
 const ATTACKS = [
-  ['brute_force', '🔐 Brute Force'],
-  ['ddos', '🌊 DDoS Attack'],
-  ['insider_threat', '🕵️ Insider Threat'],
-  ['malware_outbreak', '🦠 Malware Outbreak'],
-  ['mixed', '💥 Multi-Vector'],
+  ['brute_force', Lock, 'Brute Force'],
+  ['ddos', Waves, 'DDoS Attack'],
+  ['insider_threat', UserSearch, 'Insider Threat'],
+  ['malware_outbreak', Bug, 'Malware Outbreak'],
+  ['mixed', Crosshair, 'Multi-Vector'],
 ]
 
 export function Header({ status, ageSeconds, rulesetVersion, onAttack, onReset, busy }) {
@@ -32,7 +33,7 @@ export function Header({ status, ageSeconds, rulesetVersion, onAttack, onReset, 
   return (
     <header className="header">
       <div className="header-brand">
-        <div className="header-logo">🛡️</div>
+        <div className="header-logo" aria-hidden="true"><ShieldCheck size={21} strokeWidth={1.8} /></div>
         <div>
           <div className="header-title">Watchtower</div>
           <div className="header-subtitle">Security Operations Center</div>
@@ -45,20 +46,23 @@ export function Header({ status, ageSeconds, rulesetVersion, onAttack, onReset, 
         {/* Was the string literal "LIVE", always. */}
         <ConnectionPill status={status} ageSeconds={ageSeconds} />
         <div className="attack-dropdown" ref={menuRef}>
-          <button className="btn btn-attack" onClick={() => setMenuOpen((o) => !o)} disabled={busy}>
-            ⚡ Simulate Attack ▾
+          <button className="btn btn-attack" onClick={() => setMenuOpen((o) => !o)} disabled={busy}
+                  aria-haspopup="menu" aria-expanded={menuOpen} aria-controls="attack-menu">
+            <Zap size={15} strokeWidth={1.8} /> Simulate Attack
           </button>
           {menuOpen && (
-            <div className="attack-menu">
-              {ATTACKS.map(([type, label]) => (
-                <button key={type} onClick={() => { setMenuOpen(false); onAttack(type) }}>
-                  {label}
+            <div id="attack-menu" className="attack-menu" role="menu" aria-label="Attack simulation menu">
+              {ATTACKS.map(([type, Icon, label]) => (
+                <button key={type} role="menuitem" onClick={() => { setMenuOpen(false); onAttack(type) }}>
+                  <Icon size={14} strokeWidth={1.7} /> {label}
                 </button>
               ))}
             </div>
           )}
         </div>
-        <button className="btn btn-reset" onClick={onReset} disabled={busy}>🗑️ Reset All</button>
+        <button className="btn btn-reset" onClick={onReset} disabled={busy}>
+          <Trash2 size={15} strokeWidth={1.8} /> Reset All
+        </button>
       </div>
     </header>
   )

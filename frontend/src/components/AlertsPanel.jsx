@@ -1,3 +1,4 @@
+import { BellRing } from 'lucide-react'
 import { Panel, EmptyState } from './Panel'
 
 const STATUS_LABEL = {
@@ -9,7 +10,7 @@ const STATUS_LABEL = {
 
 export function AlertsPanel({ alerts, dimmed }) {
   return (
-    <Panel icon="🚨" title="Threat Alerts" dimmed={dimmed}
+    <Panel icon={BellRing} title="Threat Alerts" dimmed={dimmed}
            badge={`${alerts.length} shown`} badgeColor="red">
       <div className="alerts-list">
         {alerts.length === 0 ? (

@@ -1,11 +1,18 @@
+import { HeartPulse } from 'lucide-react'
 import { Panel, EmptyState } from './Panel'
+
+function sourceState(source) {
+  if (source.alive) return '✓ live'
+  if (source.completed) return '✓ complete'
+  return '✕ stopped'
+}
 
 export function HealthPanel({ health, dimmed }) {
   const summary = health?.summary
   const badgeColor = summary?.state === 'ok' ? 'green' : summary?.state === 'degraded' ? 'amber' : 'red'
   return (
     <Panel
-      icon="💓"
+      icon={HeartPulse}
       title="System Health"
       dimmed={dimmed}
       badge={summary?.label || 'Unknown'}
@@ -46,7 +53,7 @@ export function HealthPanel({ health, dimmed }) {
               <span className="health-icon">📥</span>
               <div className="health-info">
                 <div className="health-detail">
-                  {health.sources.map(s => `${s.name} ${s.alive ? '✓' : '✕ stopped'}`).join(' • ')}
+                  {health.sources.map(s => `${s.name} ${sourceState(s)}`).join(' • ')}
                 </div>
               </div>
             </div>

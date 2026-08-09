@@ -58,7 +58,7 @@ export class ApiError extends Error {
  * @property {{state: 'ok'|'degraded'|'down', label: string}} summary
  * @property {Array<{name: string, icon: string, status: string, detail: string,
  *                   p50_ms: number|null, p95_ms: number|null}>} components
- * @property {Array<{name: string, alive: boolean, origin: string, stats?: object}>} sources
+ * @property {Array<{name: string, alive: boolean, completed: boolean, origin: string, stats?: object}>} sources
  * @property {number} events_per_second
  * @property {number|null} memory_usage_mb
  */

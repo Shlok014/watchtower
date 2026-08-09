@@ -1,3 +1,4 @@
+import { ShieldBan } from 'lucide-react'
 import { Panel, EmptyState } from './Panel'
 
 /* The panel that makes the closed loop visible. `events_dropped` counts events
@@ -7,7 +8,7 @@ export function BlocklistPanel({ blocklist, onUnblock, dimmed }) {
   const entries = blocklist?.entries || []
   const totals = blocklist?.totals
   return (
-    <Panel icon="🚫" title="Enforcement" dimmed={dimmed}
+    <Panel icon={ShieldBan} title="Enforcement" dimmed={dimmed}
            tag="ingestion layer — nothing touches a firewall"
            badge={totals ? `${totals.events_dropped_lifetime} dropped` : '—'}
            badgeColor="red">
