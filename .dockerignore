@@ -1,0 +1,14 @@
+.git
+**/.venv
+**/node_modules
+**/__pycache__
+**/.pytest_cache
+**/.ruff_cache
+**/dist
+backend/data/*.db*
+backend/data/feeds/*
+!backend/data/feeds/.gitkeep
+backend/data/models/*
+backend/data/incidents/*
+backend/data/datasets/*
+docs/assets/*

@@ -151,6 +151,13 @@ describe('Header', () => {
     expect(screen.getByRole('menu')).toBeInTheDocument()
     expect(screen.getByRole('menuitem', { name: 'Brute Force' })).toBeInTheDocument()
   })
+
+  it('keeps the public attack action but hides reset on a shared demo', () => {
+    render(<Header status="live" ageSeconds={0} onAttack={() => {}}
+                   onReset={() => {}} busy={false} publicDemo />)
+    expect(screen.getByRole('button', { name: 'Simulate Attack' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Reset All' })).not.toBeInTheDocument()
+  })
 })
 
 describe('AlertsPanel', () => {
@@ -241,9 +248,21 @@ describe('BlocklistPanel', () => {
     screen.getByRole('button', { name: /Unblock/ }).click()
     expect(onUnblock).toHaveBeenCalledWith('1.2.3.4')
   })
+
+  it('shows enforcement evidence without an unblock control on the public host', () => {
+    render(<BlocklistPanel publicDemo onUnblock={() => {}}
+      blocklist={{ entries: [{ ip: '203.0.113.7', reason: 'demo', events_dropped: 2, seconds_remaining: 30 }], totals: {} }} />)
+    expect(screen.getByText('203.0.113.7')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Unblock' })).not.toBeInTheDocument()
+  })
 })
 
 describe('ModelPanel', () => {
+  it('does not offer retraining on the public host', () => {
+    render(<ModelPanel publicDemo model={{ trained: false, current: null, rules: {} }} onRetrain={() => {}} />)
+    expect(screen.queryByRole('button', { name: /Retrain/ })).not.toBeInTheDocument()
+    expect(screen.getByText(/no model has been trained/i)).toBeInTheDocument()
+  })
   it('keeps the rule engine and the trained model apart', () => {
     render(
       <ModelPanel

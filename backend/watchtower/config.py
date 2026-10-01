@@ -60,6 +60,7 @@ class Config:
     port: int
     alert_threshold: float
     sources: tuple[str, ...]
+    public_demo: bool = False
 
     # Derived directories. Declared here so no other module has to know the
     # layout of data/.
@@ -101,9 +102,10 @@ def from_env() -> Config:
         # unauthenticated API with a destructive endpoint to every machine on
         # the network the moment the demo was run on café wifi.
         host=os.environ.get("WATCHTOWER_HOST", "127.0.0.1"),
-        port=_env_int("WATCHTOWER_PORT", 5001),
+        port=_env_int("WATCHTOWER_PORT", _env_int("PORT", 5001)),
         alert_threshold=_env_float("WATCHTOWER_ALERT_THRESHOLD", 0.45),
         sources=_env_list("WATCHTOWER_SOURCES", ("synthetic",)),
+        public_demo=os.environ.get("WATCHTOWER_PUBLIC_DEMO") == "1",
     )
 
 

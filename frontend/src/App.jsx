@@ -21,6 +21,8 @@ import { SOARPanel } from './components/SOARPanel'
 import { StatCard } from './components/StatCard'
 import { Toast } from './components/Toast'
 
+const PUBLIC_DEMO = import.meta.env.VITE_PUBLIC_DEMO === '1'
+
 export default function App() {
   const [connected, setConnected] = useState(false)
   const [connectError, setConnectError] = useState(null)
@@ -201,7 +203,16 @@ export default function App() {
         onAttack={simulateAttack}
         onReset={resetAll}
         busy={Boolean(busy)}
+        publicDemo={PUBLIC_DEMO}
       />
+
+      {PUBLIC_DEMO && (
+        <aside className="demo-notice" aria-label="Public demo limits">
+          <strong>Public demo</strong>
+          <span>Synthetic traffic · shared, disposable database · one attack simulation per minute.</span>
+          <span>History resets when the free host restarts. Live detection uses rules; model results are documented in the repository.</span>
+        </aside>
+      )}
 
       <ConnectionBanner status={status} ageSeconds={ageSeconds} error={error} onRetry={refresh} />
 
@@ -257,11 +268,11 @@ export default function App() {
 
       <div className="grid-2 section-row">
         <SOARPanel actions={soar} dimmed={dimmed} />
-        <BlocklistPanel blocklist={blocklist} onUnblock={unblock} dimmed={dimmed} />
+        <BlocklistPanel blocklist={blocklist} onUnblock={unblock} dimmed={dimmed} publicDemo={PUBLIC_DEMO} />
       </div>
 
       <div className="grid-2 section-row">
-        <ModelPanel model={model} onRetrain={retrain} retraining={busy === 'Retrain'} dimmed={dimmed} />
+        <ModelPanel model={model} onRetrain={retrain} retraining={busy === 'Retrain'} dimmed={dimmed} publicDemo={PUBLIC_DEMO} />
         <LedgerPanel blocks={ledger} onVerify={verifyChain} result={chainResult}
                      verifying={busy === 'Verify chain'} dimmed={dimmed} />
       </div>

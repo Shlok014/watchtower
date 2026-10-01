@@ -7,6 +7,9 @@ pinned to a version can be told what changed; a client pinned to ``/api`` can
 only discover it by rendering an empty cell.
 """
 
+import threading
+import time
+
 from flask import Blueprint, abort, jsonify, request
 
 from .. import config, ledger, runtime, telemetry, threatintel
@@ -20,6 +23,9 @@ from ..store import db as store_db
 from ..store import repos, retention_note
 
 bp = Blueprint("api", __name__)
+_public_attack_lock = threading.Lock()
+_public_attack_at: dict[str, float] = {}
+PUBLIC_ATTACK_COOLDOWN_SECONDS = 60
 
 
 def query_int(name: str, default: int, lo: int, hi: int) -> int:
@@ -216,6 +222,17 @@ def validate_blockchain():
 @bp.route("/simulate-attack", methods=["POST"])
 def simulate_attack():
     """Trigger a simulated attack — supports multiple attack types."""
+    if config.get().public_demo:
+        peer = request.remote_addr or "unknown"
+        now = time.monotonic()
+        with _public_attack_lock:
+            last = _public_attack_at.get(peer, float("-inf"))
+            if now - last < PUBLIC_ATTACK_COOLDOWN_SECONDS:
+                return jsonify({
+                    "error": "demo_rate_limit",
+                    "detail": "The shared demo allows one attack simulation per minute. Try again shortly.",
+                }), 429
+            _public_attack_at[peer] = now
     attack_type = request.json.get("attack_type", "mixed") if request.is_json else "mixed"
     label, raws = synthetic.build_attack(attack_type)
     for raw in raws:
@@ -457,6 +474,7 @@ def get_config():
             "retention_hours": cfg.retention_hours,
             "alert_threshold": cfg.alert_threshold,
             "configured_sources": list(cfg.sources),
+            "public_demo": cfg.public_demo,
             "running_sources": runtime.status(),
             "cors_origins": list(cfg.cors_origins),
             "ruleset_version": rules.ruleset_version(),

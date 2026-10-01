@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: watchtower-security-demo
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    autoDeployTrigger: commit
+    envVars:
+      - key: WATCHTOWER_PUBLIC_DEMO
+        value: "1"
+      - key: WATCHTOWER_SOURCES
+        value: synthetic
+      - key: WATCHTOWER_DATA_DIR
+        value: /tmp/watchtower
+      - key: WATCHTOWER_HOST
+        value: 0.0.0.0

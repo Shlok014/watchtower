@@ -7,7 +7,9 @@ generator and set the uptime clock only under ``python app.py``, so under
 and uptime read 0 forever. Every entry point now goes through ``create_app``.
 """
 
-from flask import Flask, jsonify
+from pathlib import Path
+
+from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 
 from . import config, runtime, threatintel
@@ -18,12 +20,15 @@ from .sources import synthetic
 from .store import db as store_db
 
 API_PREFIX = "/api/v1"
+FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
 
 
 def create_app(cfg: config.Config | None = None, start_sources: bool = True) -> Flask:
     if cfg is not None:
         config.set_config(cfg)
     cfg = config.get()
+    if cfg.public_demo and any(source != "synthetic" for source in cfg.sources):
+        raise ValueError("Public demo only permits the synthetic source")
 
     app = Flask(__name__)
 
@@ -33,6 +38,36 @@ def create_app(cfg: config.Config | None = None, start_sources: bool = True) -> 
     CORS(app, origins=list(cfg.cors_origins))
 
     app.register_blueprint(api_bp, url_prefix=API_PREFIX)
+
+    if cfg.public_demo:
+        @app.before_request
+        def _public_demo_boundary():
+            blocked = (
+                ("POST", f"{API_PREFIX}/reset"),
+                ("POST", f"{API_PREFIX}/retrain"),
+            )
+            if (request.method, request.path) in blocked or (
+                request.method == "DELETE"
+                and request.path.startswith(f"{API_PREFIX}/blocklist/")
+            ):
+                return jsonify({
+                    "error": "public_demo_read_only",
+                    "detail": "Operational changes are disabled on the shared public demo.",
+                }), 403
+
+    @app.get("/")
+    def _frontend_index():
+        if not (FRONTEND_DIST / "index.html").is_file():
+            return jsonify({"error": "frontend_not_built"}), 503
+        return send_from_directory(FRONTEND_DIST, "index.html")
+
+    @app.get("/assets/<path:filename>")
+    def _frontend_asset(filename: str):
+        return send_from_directory(FRONTEND_DIST / "assets", filename)
+
+    @app.get("/favicon.svg")
+    def _frontend_favicon():
+        return send_from_directory(FRONTEND_DIST, "favicon.svg")
 
     @app.errorhandler(400)
     def _bad_request(err):

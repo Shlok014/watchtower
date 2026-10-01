@@ -85,6 +85,15 @@ body {
 /* ─── App Layout ────────────────────────────────────────────────────────────── */
 .app { max-width: 1520px; margin: 0 auto; padding: 0.75rem 1.25rem 2rem; }
 
+.demo-notice {
+  display: flex; flex-wrap: wrap; gap: 0.35rem 0.75rem;
+  padding: 0.65rem 0.85rem; margin: -0.3rem 0 1rem;
+  border: 1px solid var(--border); border-left: 3px solid var(--amber);
+  border-radius: var(--radius-sm); background: var(--bg-secondary);
+  color: var(--text-secondary); font-size: 0.76rem; line-height: 1.5;
+}
+.demo-notice strong { color: var(--text-primary); white-space: nowrap; }
+
 /* ─── Header ────────────────────────────────────────────────────────────────── */
 .header {
   display: flex; align-items: center; justify-content: space-between;

@@ -5,14 +5,14 @@ import { Panel, EmptyState } from './Panel'
    The live dashboard's detection is a RULE ENGINE. The trained model scores
    replayed HDFS blocks, and its published F1 was measured on complete blocks —
    which the live partial-block scores are not. Every claim here is scoped. */
-export function ModelPanel({ model, onRetrain, retraining, dimmed }) {
+export function ModelPanel({ model, onRetrain, retraining, dimmed, publicDemo = false }) {
   const current = model?.current
   const live = model?.live_scoring
   return (
     <Panel icon={BrainCircuit} title="Detection" dimmed={dimmed}
            badge={current ? `model v${current.version}` : 'no model'}
            badgeColor={current ? 'purple' : 'amber'}
-           actions={
+           actions={!publicDemo &&
              <button className="btn btn-retrain" onClick={onRetrain} disabled={retraining}>
                {retraining ? '⏳ Retraining…' : '🧠 Retrain'}
              </button>
@@ -30,7 +30,8 @@ export function ModelPanel({ model, onRetrain, retraining, dimmed }) {
           <div className="model-block-title">Trained model — benchmark</div>
           {!current ? (
             <EmptyState>
-              No model has been trained. Run <code>python -m eval.benchmark</code>, or press Retrain.
+              No model has been trained on this host. Run <code>python -m eval.benchmark</code>
+              {publicDemo ? ' locally to inspect the published model evaluation.' : ', or press Retrain.'}
             </EmptyState>
           ) : (
             <>

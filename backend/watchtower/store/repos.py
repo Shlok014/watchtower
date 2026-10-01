@@ -41,10 +41,13 @@ def retention_note() -> str:
     and gone on describing storage that no longer exists — in the very field
     added to stop the app misrepresenting itself.
     """
-    return (
+    note = (
         f"SQLite (WAL) at {db.path().name}; events retained {retention_hours()}h unless "
         "referenced by an alert; ledger is append-only and exempt"
     )
+    if config.get().public_demo:
+        note += "; this hosted demo is disposable and resets when its free host restarts"
+    return note
 
 
 # ── counters ─────────────────────────────────────────────────────────────────

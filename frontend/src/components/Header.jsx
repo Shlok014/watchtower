@@ -10,7 +10,7 @@ const ATTACKS = [
   ['mixed', Crosshair, 'Multi-Vector'],
 ]
 
-export function Header({ status, ageSeconds, rulesetVersion, onAttack, onReset, busy }) {
+export function Header({ status, ageSeconds, rulesetVersion, onAttack, onReset, busy, publicDemo = false }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef(null)
 
@@ -60,9 +60,11 @@ export function Header({ status, ageSeconds, rulesetVersion, onAttack, onReset, 
             </div>
           )}
         </div>
-        <button className="btn btn-reset" onClick={onReset} disabled={busy}>
-          <Trash2 size={15} strokeWidth={1.8} /> Reset All
-        </button>
+        {!publicDemo && (
+          <button className="btn btn-reset" onClick={onReset} disabled={busy}>
+            <Trash2 size={15} strokeWidth={1.8} /> Reset All
+          </button>
+        )}
       </div>
     </header>
   )

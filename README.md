@@ -12,7 +12,7 @@ React.
 [![License](https://img.shields.io/github/license/Shlok014/watchtower)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776ab.svg)](backend/requirements.txt)
 [![Node 22+](https://img.shields.io/badge/node-22%2B-5fa04e.svg)](frontend/package.json)
-[![Tests](https://img.shields.io/badge/tests-141%20backend%20%2B%2045%20frontend-34d399.svg)](#tests)
+[![Tests](https://img.shields.io/badge/tests-148%20backend%20%2B%2048%20frontend-34d399.svg)](#tests)
 
 [![CI](https://github.com/Shlok014/watchtower/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Shlok014/watchtower/actions/workflows/ci.yml)
 
@@ -524,11 +524,11 @@ recomputes something — which is the whole point.
 ## Tests
 
 ```bash
-cd backend  && .venv/bin/python -m pytest    # 141
-cd frontend && npm test                      # 43
+cd backend  && .venv/bin/python -m pytest    # 148
+cd frontend && npm test                      # 48
 ```
 
-141 tests covering the HTTP contract, the four ingestion sources (including a real
+148 backend tests covering the HTTP contract, the four ingestion sources (including a real
 UDP datagram end to end, and a tailer surviving both rotation and in-place
 truncation), the SOAR closed loop (blocked address → zero further alerts, N real
 drops), playbook validation, a webhook against a real HTTP server and a closed
@@ -552,7 +552,7 @@ make dev       # API on :5001, dashboard on :5173
 
 | | |
 |---|---|
-| `make test` | 141 backend + 45 frontend |
+| `make test` | 148 backend + 48 frontend |
 | `make lint` | ruff, eslint, and the honesty gate |
 | `make bench` | regenerate `docs/METRICS.md` from a real run |
 | `make demo` | verify the ledger, corrupt one event with raw SQL, verify again |
@@ -560,6 +560,30 @@ make dev       # API on :5001, dashboard on :5173
 | `make data` | download the full HDFS_v1 benchmark (~1.5 GB extracted) |
 
 `SOURCES=synthetic,syslog,replay:hdfs@25 make dev` picks the ingestion sources.
+
+## Public portfolio demo
+
+`render.yaml` defines a **free** Render web service built from the root `Dockerfile`.
+The image builds the React dashboard with a same-origin `/api/v1` URL and runs
+Flask through a single Gunicorn worker. It sets `WATCHTOWER_PUBLIC_DEMO=1`,
+accepts only synthetic ingestion, and uses a temporary SQLite database. The
+public dashboard labels generated traffic, the shared database, and the fact
+that **all history resets when the free host sleeps, restarts, or redeploys**.
+Render's free service sleeps after 15 idle minutes and can take about a minute
+to wake. No claim of durable auditing applies to this hosted instance.
+
+Visitors can simulate a bounded attack (one burst per source address per minute),
+inspect real detection and SOAR outcomes, and verify the live ledger. Public
+requests cannot reset data, retrain the model, or remove blocks; the API returns
+403 even if a caller skips the hidden UI controls. No webhook destination or
+credentials are configured. The hosted model panel honestly reports that no
+trained HDFS model is loaded. The repository's benchmark and local CLI provide
+that separate model evaluation. The public host reports threat feeds as
+unavailable until they have been fetched, rather than inventing reputation.
+
+To deploy, connect this GitHub branch to Render as a Blueprint, inspect that
+the service plan is **Free**, and launch it. The URL belongs here only after
+the hosted dashboard and `/api/v1/stats` pass a live smoke test.
 
 `scripts/dev.sh` replaces the old `start.sh`, whose first line was
 `lsof -ti:5001 | xargs kill -9` — that kills whatever owns the port, not what

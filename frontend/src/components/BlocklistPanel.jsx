@@ -4,7 +4,7 @@ import { Panel, EmptyState } from './Panel'
 /* The panel that makes the closed loop visible. `events_dropped` counts events
    this pipeline really discarded before detection ran — not actions it reported
    taking. */
-export function BlocklistPanel({ blocklist, onUnblock, dimmed }) {
+export function BlocklistPanel({ blocklist, onUnblock, dimmed, publicDemo = false }) {
   const entries = blocklist?.entries || []
   const totals = blocklist?.totals
   return (
@@ -18,7 +18,7 @@ export function BlocklistPanel({ blocklist, onUnblock, dimmed }) {
         ) : (
           <table className="logs-table">
             <thead>
-              <tr><th>Address</th><th>Reason</th><th>Dropped</th><th>Expires in</th><th></th></tr>
+              <tr><th>Address</th><th>Reason</th><th>Dropped</th><th>Expires in</th>{!publicDemo && <th>Action</th>}</tr>
             </thead>
             <tbody>
               {entries.map((e) => (
@@ -27,12 +27,14 @@ export function BlocklistPanel({ blocklist, onUnblock, dimmed }) {
                   <td>{e.reason}</td>
                   <td><strong>{e.events_dropped}</strong></td>
                   <td>{e.expired ? 'expired' : `${e.seconds_remaining}s`}</td>
-                  <td>
-                    <button className="btn btn-validate" onClick={() => onUnblock(e.ip)}
-                            title="Remove the block; this address's events resume being detected">
-                      Unblock
-                    </button>
-                  </td>
+                  {!publicDemo && (
+                    <td>
+                      <button className="btn btn-validate" onClick={() => onUnblock(e.ip)}
+                              title="Remove the block; this address's events resume being detected">
+                        Unblock
+                      </button>
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>
