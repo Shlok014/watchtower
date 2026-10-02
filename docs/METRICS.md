@@ -30,9 +30,9 @@ this is.
 
 | Model | Supervised | Precision | Recall | F1 | ROC-AUC | Fit (s) |
 |---|---|---:|---:|---:|---:|---:|
-| LogisticRegression | yes | 0.9605 | 0.9998 | **0.9797** | 0.9994 | 0.957 |
-| DecisionTree | yes | 0.9986 | 0.9986 | **0.9986** | 0.9996 | 0.34 |
-| IsolationForest | no | 0.1969 | 0.7150 | **0.3087** | 0.9465 | 0.86 |
+| LogisticRegression | yes | 0.9605 | 0.9998 | **0.9797** | 0.9994 | 1.143 |
+| DecisionTree | yes | 0.9986 | 0.9986 | **0.9986** | 0.9996 | 0.37 |
+| IsolationForest | no | 0.1969 | 0.7150 | **0.3087** | 0.9465 | 0.85 |
 
 Confusion matrix for DecisionTree on the held-out half: TP 8,407 · FP 12 · FN 12 · TN 279,100
 
@@ -54,11 +54,12 @@ Confusion matrix for DecisionTree on the held-out half: TP 8,407 · FP 12 · FN 
 
 ## The persisted model
 
-The LogisticRegression row above is **version 4** on disk,
-fitted and evaluated by the same code path `POST /api/v1/retrain` runs, so the
-number published here and the number the running system reports are the same
-one by construction. Each version records its seed, split indices, sklearn
-version, parameters and a SHA-256 of the exact feature matrix it saw.
+This benchmark saved LogisticRegression as **version 5** in the
+environment that ran it. Model artefacts are not committed to Git; a fresh
+clone must train its own. The benchmark and `POST /api/v1/retrain` use the
+same fit and evaluation path. Each version records its seed, split indices,
+sklearn version, parameters, source hashes, and a SHA-256 of the feature
+matrix and miner state. Live scoring refuses a mismatched miner.
 
 Retraining on unchanged data returns a delta of exactly 0.0000. The endpoint
 this replaced returned a figure that rose about a point per button press and
@@ -79,11 +80,8 @@ because they are stable.
 
 ## Pipeline
 
-| Parse + featurise | 88,351 lines/sec (126.5s for 11,175,629 lines) |
+| Parse + featurise | 89,055 lines/sec (125.5s for 11,175,629 lines) |
 |---|---|
-
-Timed on the run that built the cached feature matrix, not on this
-invocation — this one reused the cache and did no parsing at all.
 
 
 ## Environment

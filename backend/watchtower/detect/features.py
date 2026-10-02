@@ -22,6 +22,7 @@ benchmark is the specific failure this project exists to avoid.
 """
 
 import csv
+import hashlib
 import re
 import time
 from collections import Counter, defaultdict
@@ -32,7 +33,7 @@ import numpy as np
 
 from .. import config
 
-FEATURE_SCHEMA = 2
+FEATURE_SCHEMA = 3
 
 BLK = re.compile(r"blk_-?\d+")
 
@@ -95,6 +96,20 @@ def best_available() -> Dataset:
 
 def datasets_dir() -> Path:
     return config.get().datasets_dir
+
+
+def file_sha256(path: Path) -> str:
+    """Fingerprint source bytes, including changes that preserve size or mtime."""
+    digest = hashlib.sha256()
+    with path.open("rb") as fh:
+        for chunk in iter(lambda: fh.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def miner_stream(dataset: Dataset) -> str:
+    """The sample must not replace the full benchmark's parser state."""
+    return "hdfs_sample" if dataset.key == "sample" else "hdfs"
 
 
 def load_labels(dataset: Dataset = FULL) -> dict:
@@ -264,6 +279,8 @@ def build_matrix_holdout(parser, dataset: Dataset = FULL, progress_every: int = 
         "held_out_matched_lines": held_out_matched,
         "held_out_unmatched_lines": held_out_unmatched,
         "mixed_split_lines": mixed,
+        "log_sha256": file_sha256(dataset.log_path()),
+        "labels_sha256": file_sha256(dataset.labels_path()),
         "seconds": round(time.perf_counter() - t0, 2),
     }
     return X, y, block_ids, template_ids, stats

@@ -5,7 +5,7 @@
     "subset": "loghub HDFS_v1 (full, 11.2M lines)",
     "dataset": "full",
     "dataset_label": "loghub HDFS_v1 (full, 11.2M lines)",
-    "feature_schema": 2,
+    "feature_schema": 3,
     "split_method": "stratified block 50/50; train-only template mining",
     "lines_read": 11175629,
     "lines_with_block_id": 11175629,
@@ -18,7 +18,9 @@
     "held_out_matched_lines": 5588020,
     "held_out_unmatched_lines": 1,
     "mixed_split_lines": 0,
-    "seconds": 126.49,
+    "log_sha256": "0783096174d7832c618337f9609e06e04abd86ddd7089b3c12b407e63bfebc52",
+    "labels_sha256": "1c711ed6c8848fc3243fb4d092f172f31d128c8a6ec7f26ebba72ab931885ed8",
+    "seconds": 125.49,
     "miner_sha256": "d2c79a543afc40e5a2702504d2481332723bfd6c6bb921da197b74adc18a0e8a"
   },
   "split": {
@@ -27,17 +29,17 @@
     "train": 287530,
     "test": 287531
   },
-  "model_version": 4,
-  "features_from_cache": true,
+  "model_version": 5,
+  "features_from_cache": false,
   "parsing": {
-    "seconds": 126.5,
-    "lines_per_second": 88351
+    "seconds": 125.5,
+    "lines_per_second": 89055
   },
   "models": {
     "LogisticRegression": {
       "supervised": true,
-      "fit_seconds": 0.957,
-      "persisted_version": 4,
+      "fit_seconds": 1.143,
+      "persisted_version": 5,
       "precision": 0.9605,
       "recall": 0.9998,
       "f1": 0.9797,
@@ -49,7 +51,7 @@
     },
     "DecisionTree": {
       "supervised": true,
-      "fit_seconds": 0.34,
+      "fit_seconds": 0.37,
       "precision": 0.9986,
       "recall": 0.9986,
       "f1": 0.9986,
@@ -61,7 +63,7 @@
     },
     "IsolationForest": {
       "supervised": false,
-      "fit_seconds": 0.86,
+      "fit_seconds": 0.85,
       "precision": 0.1969,
       "recall": 0.715,
       "f1": 0.3087,

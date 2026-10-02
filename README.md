@@ -12,7 +12,7 @@ React.
 [![License](https://img.shields.io/github/license/Shlok014/watchtower)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776ab.svg)](backend/requirements.txt)
 [![Node 22+](https://img.shields.io/badge/node-22%2B-5fa04e.svg)](frontend/package.json)
-[![Tests](https://img.shields.io/badge/tests-150%20backend%20%2B%2045%20frontend-34d399.svg)](#tests)
+[![Tests](https://img.shields.io/badge/tests-154%20backend%20%2B%2045%20frontend-34d399.svg)](#tests)
 
 [![CI](https://github.com/Shlok014/watchtower/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Shlok014/watchtower/actions/workflows/ci.yml)
 
@@ -364,7 +364,7 @@ blocks (2.93% anomalous), 45 mined templates, stratified 50/50 split at seed 42:
 | DecisionTree | yes | 0.9986 | 0.9986 | **0.9986** | 0.9996 |
 | IsolationForest | no | 0.1969 | 0.7150 | **0.3087** | 0.9465 |
 
-Parse-and-featurise throughput: **88,351 lines/sec** (126.5s to read, mine,
+Parse-and-featurise throughput: **89,055 lines/sec** (125.5s to read, mine,
 and featurise 11.2M lines over three passes). This benchmark excludes storage,
 ledger hashing, live detection, alerting, and SOAR.
 
@@ -399,9 +399,10 @@ unchanged evaluation result. The endpoint returns measured fit time, versioned
 metadata, metrics, and deltas from the persisted prior model.
 
 Cached retraining uses the persisted matrix for 575,061 blocks because the feature
-matrix is cached alongside the template ids that define its columns. The two are
-meaningless apart: re-parsing would re-mine the templates, and the column space
-would shift underneath two models that are supposed to be comparable.
+matrix is cached alongside the template ids that define its columns. The cache
+is reused only when the log, labels, and miner state hashes still match. Full
+and sample runs have separate miner state; a sample smoke run cannot replace
+the active full model. Live scoring refuses a model whose miner hash differs.
 
 ### The model in the live pipeline
 
@@ -529,7 +530,7 @@ cd backend  && .venv/bin/python -m pytest    # 141
 cd frontend && npm test                      # 43
 ```
 
-150 tests covering the HTTP contract, the four ingestion sources (including a real
+154 tests covering the HTTP contract, the four ingestion sources (including a real
 UDP datagram end to end, and a tailer surviving both rotation and in-place
 truncation), the SOAR closed loop (blocked address → zero further alerts, N real
 drops), playbook validation, a webhook against a real HTTP server and a closed
@@ -553,7 +554,7 @@ make dev       # API on :5001, dashboard on :5173
 
 | | |
 |---|---|
-| `make test` | 150 backend + 45 frontend |
+| `make test` | 154 backend + 45 frontend |
 | `make lint` | ruff, eslint, and the honesty gate |
 | `make bench` | regenerate `docs/METRICS.md` from a real run |
 | `make demo` | verify the ledger, corrupt one event with raw SQL, verify again |
