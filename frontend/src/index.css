@@ -161,6 +161,7 @@ body {
    style — an amber, still-working component rendered byte-identically to a
    dead one. */
 .health-dot.degraded { background: var(--amber); box-shadow: 0 0 6px rgba(251, 191, 36, 0.5); }
+.health-dot.idle { background: var(--amber); }
 .health-dot.simulated { background: var(--purple); }
 .health-dot.unknown { background: var(--text-dim); }
 .health-icon { display: none; }
@@ -182,11 +183,13 @@ body {
 }
 .pipeline-node.running { border-color: var(--border); color: var(--text-primary); }
 .pipeline-node.degraded { border-color: var(--amber); color: var(--text-primary); }
+.pipeline-node.idle { border-color: var(--amber); color: var(--text-primary); }
 .pipeline-node.simulated { border-color: var(--purple); color: var(--purple); }
 .pipeline-node.stopped { border-color: var(--red); color: var(--red); }
 .pipeline-node.unknown { border-color: var(--border); color: var(--text-dim); }
 .pipeline-node-icon { display: inline-flex; color: var(--text-dim); }
 .pipeline-node.degraded .pipeline-node-icon { color: var(--amber); }
+.pipeline-node.idle .pipeline-node-icon { color: var(--amber); }
 .pipeline-arrow { color: var(--text-dim); font-size: 1rem; padding: 0 0.35rem; opacity: 0.6; font-weight: 400; }
 
 /* ─── Stats Grid ────────────────────────────────────────────────────────────── */

@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiError } from './api/client'
 
@@ -100,6 +100,8 @@ describe('App', () => {
     vi.clearAllMocks()
     vi.useFakeTimers({ shouldAdvanceTime: true })
   })
+
+  afterEach(() => vi.unstubAllEnvs())
 
   it('holds at the connection gate until a real request comes back', async () => {
     api.health.mockRejectedValue(new ApiError('Cannot reach http://localhost:5001/api/v1', {
@@ -227,5 +229,18 @@ describe('App', () => {
     // The regression: `fetchAll` depended on `search`, so every keystroke tore
     // the timer down and rebuilt it, resetting the countdown each time.
     expect(spy.mock.calls.length).toBe(before)
+  })
+
+  it('labels the on-demand public demo as persistent between visits', async () => {
+    vi.stubEnv('VITE_PUBLIC_DEMO', '1')
+    happyBackend()
+    api.health.mockResolvedValue({ ...HEALTH, summary: {
+      state: 'idle', label: 'On-demand demo — waiting for a simulation',
+    }, sources: [] })
+    render(<App />)
+    await settle(100)
+
+    await waitFor(() => expect(screen.getByText(/History persists between visits/)).toBeInTheDocument())
+    expect(screen.queryByText(/resets when the free host restarts/)).not.toBeInTheDocument()
   })
 })

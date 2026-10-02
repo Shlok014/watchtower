@@ -21,9 +21,8 @@ import { SOARPanel } from './components/SOARPanel'
 import { StatCard } from './components/StatCard'
 import { Toast } from './components/Toast'
 
-const PUBLIC_DEMO = import.meta.env.VITE_PUBLIC_DEMO === '1'
-
 export default function App() {
+  const PUBLIC_DEMO = import.meta.env.VITE_PUBLIC_DEMO === '1'
   const [connected, setConnected] = useState(false)
   const [connectError, setConnectError] = useState(null)
   const [attempts, setAttempts] = useState(0)
@@ -209,8 +208,12 @@ export default function App() {
       {PUBLIC_DEMO && (
         <aside className="demo-notice" aria-label="Public demo limits">
           <strong>Public demo</strong>
-          <span>Synthetic traffic · shared, disposable database · one attack simulation per minute.</span>
-          <span>History resets when the free host restarts. Live detection uses rules; model results are documented in the repository.</span>
+          <span>Synthetic traffic · shared demo · one attack simulation per minute.</span>
+          <span>{health?.summary?.state === 'idle'
+            ? 'History persists between visits and app restarts; new events arrive when you simulate an attack. Shared history may be cleared for maintenance.'
+            : health
+              ? 'History resets when the free host restarts.'
+              : 'Loading storage status.'} Live detection uses rules; model results are documented in the repository.</span>
         </aside>
       )}
 

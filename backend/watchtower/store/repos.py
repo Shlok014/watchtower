@@ -46,7 +46,10 @@ def retention_note() -> str:
         "referenced by an alert; ledger is append-only and exempt"
     )
     if config.get().public_demo:
-        note += "; this hosted demo is disposable and resets when its free host restarts"
+        if config.get().sources:
+            note += "; this hosted demo is disposable and resets when its free host restarts"
+        else:
+            note += "; shared demo history is persistent across app restarts and may be cleared for maintenance"
     return note
 
 
@@ -68,6 +71,34 @@ def counters() -> dict:
     for k in ("events", "alerts", "blocks", "soar"):
         out.setdefault(k, 0)
     return out
+
+
+def reserve_public_attack() -> str | None:
+    """Atomically bound shared demo writes across WSGI workers and restarts."""
+    today = int(datetime.now(UTC).strftime("%Y%m%d"))
+    current_ms = now_ms()
+    with db.write() as conn:
+        rows = conn.execute(
+            "SELECT name, value FROM counters WHERE name IN "
+            "('public_attack_day', 'public_attack_count', 'public_attack_last_ms')"
+        ).fetchall()
+        values = {row["name"]: row["value"] for row in rows}
+        count = values.get("public_attack_count", 0) if values.get("public_attack_day") == today else 0
+        if count >= 60:
+            return "daily_budget"
+        if current_ms - values.get("public_attack_last_ms", 0) < 10_000:
+            return "shared_cooldown"
+        for name, value in (
+            ("public_attack_day", today),
+            ("public_attack_count", count + 1),
+            ("public_attack_last_ms", current_ms),
+        ):
+            conn.execute(
+                "INSERT INTO counters(name, value) VALUES(?, ?) "
+                "ON CONFLICT(name) DO UPDATE SET value = excluded.value",
+                (name, value),
+            )
+    return None
 
 
 # ── events ───────────────────────────────────────────────────────────────────

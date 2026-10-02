@@ -1,10 +1,13 @@
-"""The public host is disposable and does not expose operational controls."""
+"""Public hosts do not expose operational controls or unbounded writes."""
+
+from datetime import UTC, datetime
 
 import pytest
 
 from watchtower import app as app_module
 from watchtower import config
 from watchtower.app import create_app
+from watchtower.store import db as store_db
 
 
 @pytest.fixture()
@@ -49,11 +52,65 @@ def test_public_attack_is_bounded_and_ledger_still_verifies(public_client):
     assert public_client.post("/api/v1/blockchain/validate").get_json()["ok"] is True
 
 
+def test_public_attack_cooldown_is_shared_across_visitors(public_client):
+    first = public_client.post(
+        "/api/v1/simulate-attack", json={"attack_type": "mixed"},
+        environ_overrides={"REMOTE_ADDR": "198.51.100.211"},
+    )
+    second = public_client.post(
+        "/api/v1/simulate-attack", json={"attack_type": "mixed"},
+        environ_overrides={"REMOTE_ADDR": "198.51.100.212"},
+    )
+    assert first.status_code == 200
+    assert second.status_code == 429
+    assert second.get_json()["error"] == "demo_rate_limit"
+
+
+def test_public_attack_daily_budget_limits_database_growth(public_client):
+    today = int(datetime.now(UTC).strftime("%Y%m%d"))
+    with store_db.write() as conn:
+        conn.executemany(
+            "INSERT INTO counters(name, value) VALUES(?, ?)",
+            [("public_attack_day", today), ("public_attack_count", 60)],
+        )
+    result = public_client.post(
+        "/api/v1/simulate-attack", json={"attack_type": "mixed"},
+        environ_overrides={"REMOTE_ADDR": "198.51.100.213"},
+    )
+    assert result.status_code == 429
+    assert public_client.get("/api/v1/stats").get_json()["total_logs"] == 0
+
+
 def test_public_config_reports_disposable_storage(public_client):
     config_body = public_client.get("/api/v1/config").get_json()
     assert config_body["public_demo"] is True
     stats = public_client.get("/api/v1/stats").get_json()
     assert "disposable" in stats["retention_note"]
+
+
+def test_on_demand_public_demo_reports_idle_and_keeps_processed_events(tmp_path):
+    config.replace(data_dir=tmp_path / "persistent", sources=(), public_demo=True)
+    first_app = create_app(start_sources=False)
+    with first_app.test_client() as client:
+        before = client.get("/api/v1/system-health").get_json()
+        assert before["summary"]["state"] == "idle"
+        assert before["sources_not_running"] == []
+        assert before["components"][0]["status"] == "idle"
+        assert "persistent" in client.get("/api/v1/stats").get_json()["retention_note"]
+
+        result = client.post(
+            "/api/v1/simulate-attack",
+            json={"attack_type": "brute_force"},
+            environ_overrides={"REMOTE_ADDR": "198.51.100.123"},
+        )
+        assert result.status_code == 200
+        stored = client.get("/api/v1/stats").get_json()["total_logs"]
+        assert stored > 0
+
+    second_app = create_app(start_sources=False)
+    with second_app.test_client() as client:
+        assert client.get("/api/v1/stats").get_json()["total_logs"] == stored
+        assert client.get("/api/v1/system-health").get_json()["summary"]["state"] == "idle"
 
 
 def test_public_service_serves_built_dashboard_and_api(monkeypatch, tmp_path, public_client):

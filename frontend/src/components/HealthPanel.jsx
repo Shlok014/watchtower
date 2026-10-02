@@ -9,7 +9,7 @@ function sourceState(source) {
 
 export function HealthPanel({ health, dimmed }) {
   const summary = health?.summary
-  const badgeColor = summary?.state === 'ok' ? 'green' : summary?.state === 'degraded' ? 'amber' : 'red'
+  const badgeColor = summary?.state === 'ok' ? 'green' : ['degraded', 'idle'].includes(summary?.state) ? 'amber' : 'red'
   return (
     <Panel
       icon={HeartPulse}

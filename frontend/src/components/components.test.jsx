@@ -123,6 +123,17 @@ describe('HealthPanel', () => {
     expect(screen.getByText(/No health data received yet/)).toBeInTheDocument()
   })
 
+  it('shows on-demand ingestion as idle instead of a failed system', () => {
+    render(<HealthPanel health={{
+      summary: { state: 'idle', label: 'On-demand demo — waiting for a simulation' },
+      components: [{ name: 'Ingest Queue', icon: '📡', status: 'idle', detail: '12 ingested', samples: 0 }],
+      sources: [],
+    }} />)
+    expect(screen.getByText(/On-demand demo/)).toHaveClass('amber')
+    expect(screen.getByText('Ingest Queue').closest('.health-item').querySelector('.health-dot'))
+      .toHaveClass('idle')
+  })
+
   it('shows a finite replay as complete instead of stopped', () => {
     render(
       <HealthPanel

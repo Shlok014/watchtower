@@ -563,27 +563,28 @@ make dev       # API on :5001, dashboard on :5173
 
 ## Public portfolio demo
 
-`render.yaml` defines a **free** Render web service built from the root `Dockerfile`.
-The image builds the React dashboard with a same-origin `/api/v1` URL and runs
-Flask through a single Gunicorn worker. It sets `WATCHTOWER_PUBLIC_DEMO=1`,
-accepts only synthetic ingestion, and uses a temporary SQLite database. The
-public dashboard labels generated traffic, the shared database, and the fact
-that **all history resets when the free host sleeps, restarts, or redeploys**.
-Render's free service sleeps after 15 idle minutes and can take about a minute
-to wake. No claim of durable auditing applies to this hosted instance.
+The no-card deployment uses [alwaysdata's Python WSGI hosting](https://help.alwaysdata.com/en/docs/web-hosting/languages/python/configuration/)
+and the root `wsgi.py` entrypoint. Flask serves the built React dashboard and
+same-origin `/api/v1` API. SQLite, feed caches, and Drain state live outside the
+code checkout in `~/watchtower-data`, so app restarts and code updates keep the
+shared history. The free plan does not include an [always-on service](https://help.alwaysdata.com/en/docs/web-hosting/services/):
+the source is honestly reported as **idle** between visitor-triggered synthetic
+attack simulations. See [the deployment steps](docs/ALWAYSDATA.md).
 
-Visitors can simulate a bounded attack (one burst per source address per minute),
-inspect real detection and SOAR outcomes, and verify the live ledger. Public
-requests cannot reset data, retrain the model, or remove blocks; the API returns
-403 even if a caller skips the hidden UI controls. No webhook destination or
-credentials are configured. The hosted model panel honestly reports that no
-trained HDFS model is loaded. The repository's benchmark and local CLI provide
-that separate model evaluation. The public host reports threat feeds as
-unavailable until they have been fetched, rather than inventing reputation.
+Visitors can inspect the real rule-based detection, SOAR records, and ledger.
+The shared demo allows one simulation per visitor per minute, at least 10 seconds
+between simulations globally, and at most 60 simulations per UTC day to bound
+database growth. Public requests cannot reset data, retrain the model, or
+remove blocks; the API returns 403 even if a caller skips the hidden controls.
+No webhook destination or credentials are configured. A trained HDFS model is
+not bundled; the separate benchmark is documented in this repository. If the
+threat feeds have not been fetched, reputation reports `unavailable` rather
+than inventing a verdict. This is a shared portfolio demo, not an audit archive;
+history may be cleared for maintenance.
 
-To deploy, connect this GitHub branch to Render as a Blueprint, inspect that
-the service plan is **Free**, and launch it. The URL belongs here only after
-the hosted dashboard and `/api/v1/stats` pass a live smoke test.
+`Dockerfile` and `render.yaml` remain an alternative stateless deployment: that
+version uses temporary SQLite storage and resets when its free host restarts.
+The hosted URL belongs here only after the dashboard and API pass a live check.
 
 `scripts/dev.sh` replaces the old `start.sh`, whose first line was
 `lsof -ti:5001 | xargs kill -9` — that kills whatever owns the port, not what

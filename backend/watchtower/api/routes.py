@@ -232,6 +232,14 @@ def simulate_attack():
                     "error": "demo_rate_limit",
                     "detail": "The shared demo allows one attack simulation per minute. Try again shortly.",
                 }), 429
+            limit = repos.reserve_public_attack()
+            if limit:
+                detail = (
+                    "The shared demo has reached its daily simulation budget. Try again tomorrow (UTC)."
+                    if limit == "daily_budget" else
+                    "Another simulation just ran. Try again in a few seconds."
+                )
+                return jsonify({"error": "demo_rate_limit", "detail": detail}), 429
             _public_attack_at[peer] = now
     attack_type = request.json.get("attack_type", "mixed") if request.is_json else "mixed"
     label, raws = synthetic.build_attack(attack_type)
@@ -355,9 +363,13 @@ def _component_health():
     for each, so the panel reported a healthy system even with the generator
     thread dead and nothing being processed.
     """
+    on_demand = config.get().public_demo and not config.get().sources
     alive = runtime.any_alive() or bool(runtime.finished())
     stopped = runtime.dead() + runtime.never_started()
-    gen_status = "running" if alive and not stopped else "stopped" if not alive else "degraded"
+    gen_status = (
+        "idle" if on_demand else
+        "running" if alive and not stopped else "stopped" if not alive else "degraded"
+    )
     c = repos.counters()
     retained = store_db.connect().execute("SELECT count(*) FROM events").fetchone()[0]
     feeds = threatintel.get_index()
@@ -419,7 +431,9 @@ def system_health():
     """Measured process and pipeline health."""
     components, feed_ok, stale, alive, stopped = _component_health()
 
-    if not alive:
+    if config.get().public_demo and not config.get().sources:
+        state, label = "idle", "On-demand demo — waiting for a simulation"
+    elif not alive:
         state, label = "down", "No source is running"
     elif stopped:
         # One dead source among several used to read "All systems operational",
