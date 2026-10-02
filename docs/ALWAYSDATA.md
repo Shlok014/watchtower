@@ -20,17 +20,19 @@ simulations. Do not describe this host as live network monitoring.
    ~/watchtower-venv/bin/python -m pip install -r ~/watchtower/backend/requirements.txt
    ```
 
-4. Build the frontend from the same checkout. If building on alwaysdata, run
-   `npm ci` in `~/watchtower/frontend`, then:
+4. The deployment branch includes a prebuilt `frontend/dist` bundle so the
+   1 GB host does not need Node.js or `node_modules`. For updates, rebuild it
+   locally from the same checkout, then commit the new bundle:
 
    ```sh
-   cd ~/watchtower/frontend
+   cd frontend
+   npm ci
    VITE_PUBLIC_DEMO=1 VITE_API_URL=/api/v1 npm run build
    ```
 
-   The generated `frontend/dist` is ignored by Git and must exist on the host.
-   It can also be built locally and uploaded by SFTP to save host disk space.
-   Remove `node_modules` on the host after a successful build.
+   The generated directory is normally Git-ignored; use `git add -f
+   frontend/dist` on this deployment branch. Verify the site serves the new
+   hashed assets after pulling.
 5. In **Web → Sites**, edit the new account's default site (or create one at its
    `*.alwaysdata.net` address). Set type **Python WSGI**, application path
    `/home/<account>/watchtower/wsgi.py`, working directory
@@ -45,7 +47,8 @@ simulations. Do not describe this host as live network monitoring.
    its events and ledger survive an app restart, and confirm the site still
    serves the dashboard after that restart.
 
-To update code, pull the branch, rebuild `frontend/dist`, and restart the site.
+To update code, build and commit `frontend/dist` locally, pull the branch on
+the host, and restart the site.
 Keep `~/watchtower-data` outside the checkout. A small shared history can be
 cleared as maintenance if disk usage grows; tell visitors if it is cleared.
 The free account requires occasional admin logins to avoid suspension.

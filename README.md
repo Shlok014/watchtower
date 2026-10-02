@@ -566,7 +566,8 @@ make dev       # API on :5001, dashboard on :5173
 The no-card deployment uses [alwaysdata's Python WSGI hosting](https://help.alwaysdata.com/en/docs/web-hosting/languages/python/configuration/)
 and the root `wsgi.py` entrypoint. Flask serves the built React dashboard and
 same-origin `/api/v1` API. SQLite, feed caches, and Drain state live outside the
-code checkout in `~/watchtower-data`, so app restarts and code updates keep the
+code checkout in `~/watchtower-data`, while the deployment branch includes the
+small built frontend bundle. App restarts and code updates keep the
 shared history. The free plan does not include an [always-on service](https://help.alwaysdata.com/en/docs/web-hosting/services/):
 the source is honestly reported as **idle** between visitor-triggered synthetic
 attack simulations. See [the deployment steps](docs/ALWAYSDATA.md).
