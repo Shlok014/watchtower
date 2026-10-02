@@ -35,7 +35,7 @@ follows exists because that rule forced it.
 no open pull requests, no uncommitted work, nothing running, and 18 PRs merged.
 
     make lint    ruff · eslint · fabrication gate · published-numbers gate
-    make test    146 backend · 45 frontend
+    make test    150 backend · 45 frontend
     make perf    storage figures  →  docs/STORAGE.md
     make bench   detection figures →  docs/METRICS.md
     make demo    the tamper demo, which now restores the store afterwards
@@ -320,7 +320,7 @@ full-dataset prevalence to set its threshold. The current row uses neither.
 Earlier figures remain in Git history; the table above reflects the current
 run and its measured coverage is in `docs/METRICS.md`.
 
-Tests: **146 backend + 45 frontend**.
+Tests: **150 backend + 45 frontend**.
 
 ---
 

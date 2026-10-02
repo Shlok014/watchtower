@@ -93,11 +93,42 @@ def test_config_endpoint_reports_the_live_configuration(client):
 
 
 def test_cors_is_not_wide_open(client):
-    """`CORS(app)` allowed any origin to POST /reset."""
+    """CORS controls response visibility; unsafe writes need a separate guard."""
     r = client.get(_url("/stats"), headers={"Origin": "https://evil.example"})
     assert r.headers.get("Access-Control-Allow-Origin") != "https://evil.example"
     ok = client.get(_url("/stats"), headers={"Origin": "http://localhost:5173"})
     assert ok.headers.get("Access-Control-Allow-Origin") == "http://localhost:5173"
+
+
+def test_cross_site_form_post_cannot_reset_data(client):
+    """A browser form needs no CORS read permission to submit a destructive POST."""
+    client.post(_url("/simulate-attack"), json={"attack_type": "brute_force"})
+    before = client.get(_url("/stats")).get_json()["total_logs"]
+    response = client.post(
+        _url("/reset"),
+        data={},
+        headers={"Origin": "https://attacker.example"},
+    )
+    assert response.status_code == 403
+    assert client.get(_url("/stats")).get_json()["total_logs"] == before
+
+
+def test_cross_site_fetch_metadata_is_rejected_even_without_origin(client):
+    response = client.post(_url("/reset"), headers={"Sec-Fetch-Site": "cross-site"})
+    assert response.status_code == 403
+
+
+def test_dns_rebinding_host_is_rejected(client):
+    assert client.get(_url("/stats"), base_url="http://attacker.example").status_code == 400
+
+
+def test_approved_local_frontend_origin_can_write(client):
+    response = client.post(
+        _url("/simulate-attack"),
+        json={"attack_type": "brute_force"},
+        headers={"Origin": "http://localhost:5173", "Sec-Fetch-Site": "same-site"},
+    )
+    assert response.status_code == 200
 
 
 def test_simulate_attack_then_reset_reports_real_counts(client):

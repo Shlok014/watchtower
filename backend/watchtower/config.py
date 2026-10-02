@@ -56,6 +56,7 @@ class Config:
     db_path: Path
     retention_hours: int
     cors_origins: tuple[str, ...]
+    trusted_hosts: tuple[str, ...]
     host: str
     port: int
     alert_threshold: float
@@ -89,14 +90,16 @@ def from_env() -> Config:
         data_dir=data_dir,
         db_path=db_path,
         retention_hours=_env_int("WATCHTOWER_RETENTION_HOURS", 24),
-        # Wide-open CORS was the default before this. On a dashboard that will
-        # happily POST /api/v1/reset, any page in the browser could have wiped
-        # the store. The dev server's two spellings of localhost are both here
-        # because Vite prints one and browsers sometimes resolve the other.
+        # CORS restricts response access; the app factory separately rejects
+        # cross-site writes, because a form POST can mutate without reading a
+        # response. Keep both spellings used by the local Vite frontend.
         cors_origins=_env_list(
             "WATCHTOWER_CORS_ORIGINS",
             ("http://localhost:5173", "http://127.0.0.1:5173"),
         ),
+        # Also guards DNS rebinding: a page on an attacker-controlled hostname
+        # must not be able to treat the loopback API as its own origin.
+        trusted_hosts=_env_list("WATCHTOWER_TRUSTED_HOSTS", ("localhost", "127.0.0.1")),
         # Loopback by default. The previous host was 0.0.0.0, which published an
         # unauthenticated API with a destructive endpoint to every machine on
         # the network the moment the demo was run on café wifi.

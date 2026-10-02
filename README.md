@@ -12,7 +12,7 @@ React.
 [![License](https://img.shields.io/github/license/Shlok014/watchtower)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776ab.svg)](backend/requirements.txt)
 [![Node 22+](https://img.shields.io/badge/node-22%2B-5fa04e.svg)](frontend/package.json)
-[![Tests](https://img.shields.io/badge/tests-146%20backend%20%2B%2045%20frontend-34d399.svg)](#tests)
+[![Tests](https://img.shields.io/badge/tests-150%20backend%20%2B%2045%20frontend-34d399.svg)](#tests)
 
 [![CI](https://github.com/Shlok014/watchtower/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Shlok014/watchtower/actions/workflows/ci.yml)
 
@@ -529,7 +529,7 @@ cd backend  && .venv/bin/python -m pytest    # 141
 cd frontend && npm test                      # 43
 ```
 
-146 tests covering the HTTP contract, the four ingestion sources (including a real
+150 tests covering the HTTP contract, the four ingestion sources (including a real
 UDP datagram end to end, and a tailer surviving both rotation and in-place
 truncation), the SOAR closed loop (blocked address → zero further alerts, N real
 drops), playbook validation, a webhook against a real HTTP server and a closed
@@ -553,7 +553,7 @@ make dev       # API on :5001, dashboard on :5173
 
 | | |
 |---|---|
-| `make test` | 146 backend + 45 frontend |
+| `make test` | 150 backend + 45 frontend |
 | `make lint` | ruff, eslint, and the honesty gate |
 | `make bench` | regenerate `docs/METRICS.md` from a real run |
 | `make demo` | verify the ledger, corrupt one event with raw SQL, verify again |
@@ -613,13 +613,16 @@ resolved, and `GET /api/v1/config` reports it from a running one.
 | `WATCHTOWER_ALERT_THRESHOLD` | `0.45` | changing it changes `ruleset_version` |
 | `WATCHTOWER_SOURCES` | `synthetic` | comma-separated |
 | `WATCHTOWER_CORS_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173` | |
+| `WATCHTOWER_TRUSTED_HOSTS` | `localhost,127.0.0.1` | Host allowlist; add an intended hostname explicitly |
 | `WATCHTOWER_HOST` / `WATCHTOWER_PORT` | `127.0.0.1` / `5001` | |
 
-Two of those defaults are deliberate changes from what the demo shipped with.
-CORS was `CORS(app)` — any origin — on an unauthenticated API that includes a
-destructive `POST /reset`, so any page open in the browser could have emptied
-the store. And the server bound `0.0.0.0`, publishing that same API to every
-machine on the network the moment the demo ran on café wifi.
+The server binds loopback by default. CORS limits who can read responses, but
+it cannot stop a cross-site HTML form from posting to `/reset`. Unsafe requests
+now reject unapproved browser `Origin` headers and cross-site Fetch Metadata;
+Flask rejects untrusted Host headers to prevent DNS rebinding into loopback.
+These are browser defenses, not authentication. Do not expose the unrestricted
+development API to the internet without an authentication and authorization
+layer.
 
 ## License
 
