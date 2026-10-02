@@ -42,6 +42,103 @@ def test_the_split_is_frozen(tiny_data):
     assert len(a_train) + len(a_test) == len(y)
 
 
+def test_holdout_templates_are_not_mined_from_test_or_mixed_lines(tmp_path, monkeypatch):
+    """A held-out score must not use vocabulary learned from its own log lines."""
+    from watchtower.detect.parser import LogParser
+
+    ids = [f"blk_{i}" for i in range(8)]
+    labels = {block: i % 2 for i, block in enumerate(ids)}
+    y = np.array(list(labels.values()), dtype=np.int8)
+    train_idx, test_idx = model.frozen_split(y)
+    train_block, test_block = ids[train_idx[0]], ids[test_idx[0]]
+    lines = [
+        f"081109 203615 148 INFO dfs.DataNode: Received block {block} of size 64\n" for block in ids
+    ]
+    lines += [
+        f"081109 203615 148 INFO dfs.DataNode: HELDOUT_ONLY {test_block}\n",
+        f"081109 203615 148 INFO dfs.DataNode: MIXED_ONLY {train_block} {test_block}\n",
+    ]
+    path = tmp_path / "hdfs.log"
+    path.write_text("".join(lines))
+
+    class TinyDataset:
+        key = "test"
+        label = "test"
+
+        def log_path(self):
+            return path
+
+    monkeypatch.setattr(features, "load_labels", lambda _dataset: labels)
+    parser = LogParser(persist=False)
+    X, actual_y, blocks, template_ids, stats = features.build_matrix_holdout(
+        parser, dataset=TinyDataset(), progress_every=0
+    )
+
+    assert blocks == ids
+    assert actual_y.tolist() == y.tolist()
+    assert X.shape == (8, len(template_ids))
+    assert all("HELDOUT_ONLY" not in template for template in parser.templates().values())
+    assert all("MIXED_ONLY" not in template for template in parser.templates().values())
+    assert stats["held_out_unmatched_lines"] >= 1
+    assert stats["mixed_split_lines"] == 1
+
+
+def test_legacy_feature_cache_is_rejected_before_retraining():
+    X = np.zeros((4, 1), dtype=np.float32)
+    y = np.array([0, 1, 0, 1], dtype=np.int8)
+    features.save_cache(features.SAMPLE, X, y, [f"blk_{i}" for i in range(4)], [1], {"blocks": 4})
+    assert features.load_cache(features.SAMPLE) is None
+
+
+def test_cached_matrix_is_rebuilt_if_its_miner_state_changes():
+    """Columns and the parser that named them must be one versioned unit."""
+    from watchtower.detect.parser import state_path
+
+    first = train.prepare(dataset=features.SAMPLE, rebuild=True)
+    assert first[-1] is False
+    assert train.prepare(dataset=features.SAMPLE)[-1] is True
+    state_path("hdfs").write_bytes(b"stale or corrupt state")
+    rebuilt = train.prepare(dataset=features.SAMPLE)
+    assert rebuilt[-1] is False
+    assert rebuilt[3] == first[3]
+
+
+def test_discovered_block_order_follows_log_order(tmp_path, monkeypatch):
+    """A fixed seed is not a fixed split if set iteration permutes rows."""
+    from watchtower.detect.parser import LogParser
+
+    ids = [f"blk_{i}" for i in range(12)]
+    path = tmp_path / "ordered.log"
+    path.write_text("081109 203615 148 INFO dfs.DataNode: Received blocks " + " ".join(ids) + "\n")
+
+    class TinyDataset:
+        key = "ordered"
+        label = "ordered"
+
+        def log_path(self):
+            return path
+
+    monkeypatch.setattr(
+        features, "load_labels", lambda _dataset: {b: i % 2 for i, b in enumerate(ids)}
+    )
+    _X, _y, blocks, _templates, _stats = features.build_matrix_holdout(
+        LogParser(persist=False), dataset=TinyDataset(), progress_every=0
+    )
+    assert blocks == ids
+
+
+def test_unsupervised_baseline_uses_only_features_and_all_training_rows():
+    """The baseline cannot use test prevalence or normal-only training labels."""
+    from eval import benchmark
+
+    rng = np.random.default_rng(12)
+    X_train = rng.normal(size=(40, 3)).astype(np.float32)
+    X_test = rng.normal(size=(8, 3)).astype(np.float32)
+    prediction, scores = benchmark.isolation_baseline(X_train, X_test)
+    assert prediction.shape == (8,)
+    assert scores.shape == (8,)
+
+
 def test_metrics_come_from_held_out_rows_only(tiny_data):
     X, y = tiny_data
     est, metrics, train_idx, test_idx, _ = model.fit(X, y)

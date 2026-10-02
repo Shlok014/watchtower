@@ -1,34 +1,43 @@
 {
+  "evaluation_protocol": "train_only_templates_v2",
   "dataset": {
     "name": "loghub HDFS_v1",
     "subset": "loghub HDFS_v1 (full, 11.2M lines)",
     "dataset": "full",
     "dataset_label": "loghub HDFS_v1 (full, 11.2M lines)",
+    "feature_schema": 2,
+    "split_method": "stratified block 50/50; train-only template mining",
     "lines_read": 11175629,
     "lines_with_block_id": 11175629,
     "blocks": 575061,
     "anomalous_blocks": 16838,
     "anomaly_rate": 0.02928,
     "templates": 45,
-    "seconds": 108.31
+    "train_lines": 5587608,
+    "held_out_lines": 5588021,
+    "held_out_matched_lines": 5588020,
+    "held_out_unmatched_lines": 1,
+    "mixed_split_lines": 0,
+    "seconds": 126.49,
+    "miner_sha256": "d2c79a543afc40e5a2702504d2481332723bfd6c6bb921da197b74adc18a0e8a"
   },
   "split": {
-    "method": "stratified 50/50",
+    "method": "stratified block 50/50; train-only template mining",
     "seed": 42,
     "train": 287530,
     "test": 287531
   },
-  "model_version": 1,
+  "model_version": 4,
   "features_from_cache": true,
   "parsing": {
-    "seconds": 108.3,
-    "lines_per_second": 103181
+    "seconds": 126.5,
+    "lines_per_second": 88351
   },
   "models": {
     "LogisticRegression": {
       "supervised": true,
-      "fit_seconds": 1.502,
-      "persisted_version": 1,
+      "fit_seconds": 0.957,
+      "persisted_version": 4,
       "precision": 0.9605,
       "recall": 0.9998,
       "f1": 0.9797,
@@ -40,27 +49,27 @@
     },
     "DecisionTree": {
       "supervised": true,
-      "fit_seconds": 0.47,
+      "fit_seconds": 0.34,
       "precision": 0.9986,
-      "recall": 0.9987,
+      "recall": 0.9986,
       "f1": 0.9986,
-      "tp": 8408,
+      "tp": 8407,
       "fp": 12,
-      "fn": 11,
+      "fn": 12,
       "tn": 279100,
       "roc_auc": 0.9996
     },
     "IsolationForest": {
       "supervised": false,
-      "fit_seconds": 0.82,
-      "precision": 0.0639,
-      "recall": 0.064,
-      "f1": 0.064,
-      "tp": 539,
-      "fp": 7892,
-      "fn": 7880,
-      "tn": 271220,
-      "roc_auc": 0.7014
+      "fit_seconds": 0.86,
+      "precision": 0.1969,
+      "recall": 0.715,
+      "f1": 0.3087,
+      "tp": 6020,
+      "fp": 24559,
+      "fn": 2399,
+      "tn": 254553,
+      "roc_auc": 0.9465
     }
   },
   "environment": {

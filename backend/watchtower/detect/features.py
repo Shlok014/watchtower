@@ -32,6 +32,8 @@ import numpy as np
 
 from .. import config
 
+FEATURE_SCHEMA = 2
+
 BLK = re.compile(r"blk_-?\d+")
 
 # HDFS lines look like:
@@ -161,6 +163,112 @@ def build_matrix(
     return X, y, block_ids, template_ids, stats
 
 
+def build_matrix_holdout(parser, dataset: Dataset = FULL, progress_every: int = 500_000):
+    """Fit templates on training blocks, then freeze them for held-out blocks.
+
+    HDFS lines may mention more than one block. A line spanning the split is
+    never used to fit the miner; it is matched for its held-out blocks only.
+    The three streaming passes avoid retaining raw lines from the full dataset.
+    """
+    from .model import frozen_split
+
+    labels = load_labels(dataset)
+    block_ids: list[str] = []
+    seen_blocks: set[str] = set()
+    lines = lines_with_block_id = 0
+    t0 = time.perf_counter()
+
+    def parts(line: str):
+        match = HEAD.match(line)
+        content = match.group(1) if match else line.strip()
+        return content, tuple(dict.fromkeys(BLK.findall(content)))
+
+    with open(dataset.log_path(), encoding="utf-8", errors="replace") as fh:
+        for line in fh:
+            lines += 1
+            _content, blocks = parts(line)
+            if blocks:
+                lines_with_block_id += 1
+            for block in blocks:
+                if block in labels and block not in seen_blocks:
+                    seen_blocks.add(block)
+                    block_ids.append(block)
+
+    y = np.array([labels[block] for block in block_ids], dtype=np.int8)
+    if len(y) == 0:
+        raise ValueError("no labelled blocks — nothing to train on")
+    if len(set(y.tolist())) < 2:
+        raise ValueError(f"only one class present in {len(y)} labelled blocks — refusing to fit")
+    train_idx, test_idx = frozen_split(y)
+    train_blocks = {block_ids[int(i)] for i in train_idx}
+    test_blocks = {block_ids[int(i)] for i in test_idx}
+    per_block: dict[str, Counter] = defaultdict(Counter)
+    seen_templates: set[int] = set()
+    train_lines = held_out_lines = held_out_matched = held_out_unmatched = mixed = 0
+
+    with open(dataset.log_path(), encoding="utf-8", errors="replace") as fh:
+        for line_number, line in enumerate(fh, start=1):
+            content, blocks = parts(line)
+            labelled = set(blocks) & seen_blocks
+            if not labelled or labelled & test_blocks:
+                continue
+            cid, _ = parser.parse(content)
+            seen_templates.add(cid)
+            train_lines += 1
+            for block in labelled:
+                per_block[block][cid] += 1
+            if progress_every and line_number % progress_every == 0:
+                print(
+                    f"    mined {line_number:>10,} lines, {len(seen_templates)} templates",
+                    flush=True,
+                )
+
+    with open(dataset.log_path(), encoding="utf-8", errors="replace") as fh:
+        for line in fh:
+            content, blocks = parts(line)
+            present = set(blocks)
+            test_in_line = present & test_blocks
+            if not test_in_line:
+                continue
+            held_out_lines += 1
+            if present & train_blocks:
+                mixed += 1
+            cid, _ = parser.match(content)
+            if cid is None or cid not in seen_templates:
+                held_out_unmatched += 1
+                continue
+            held_out_matched += 1
+            for block in test_in_line:
+                per_block[block][cid] += 1
+
+    template_ids = sorted(seen_templates)
+    index = {template: column for column, template in enumerate(template_ids)}
+    X = np.zeros((len(block_ids), len(template_ids)), dtype=np.float32)
+    for row, block in enumerate(block_ids):
+        for cid, count in per_block[block].items():
+            X[row, index[cid]] = count
+
+    stats = {
+        "dataset": dataset.key,
+        "dataset_label": dataset.label,
+        "feature_schema": FEATURE_SCHEMA,
+        "split_method": "stratified block 50/50; train-only template mining",
+        "lines_read": lines,
+        "lines_with_block_id": lines_with_block_id,
+        "blocks": len(block_ids),
+        "anomalous_blocks": int(y.sum()),
+        "anomaly_rate": round(float(y.mean()), 5),
+        "templates": len(template_ids),
+        "train_lines": train_lines,
+        "held_out_lines": held_out_lines,
+        "held_out_matched_lines": held_out_matched,
+        "held_out_unmatched_lines": held_out_unmatched,
+        "mixed_split_lines": mixed,
+        "seconds": round(time.perf_counter() - t0, 2),
+    }
+    return X, y, block_ids, template_ids, stats
+
+
 # ─── cache ───────────────────────────────────────────────────────────────────
 # Parsing the full dataset takes ~170 seconds. Retraining on demand from an HTTP
 # request cannot pay that, and re-parsing would also re-mine the templates, so
@@ -194,12 +302,15 @@ def load_cache(dataset: Dataset):
         return None
     try:
         with np.load(path, allow_pickle=False) as z:
+            stats = _json.loads(str(z["stats"][0]))
+            if stats.get("feature_schema") != FEATURE_SCHEMA:
+                return None
             return (
                 z["X"],
                 z["y"],
                 [str(b) for b in z["block_ids"]],
                 [int(t) for t in z["template_ids"]],
-                _json.loads(str(z["stats"][0])),
+                stats,
             )
     except (OSError, ValueError, KeyError) as exc:
         # A truncated cache is reported and ignored, never partially trusted: a
