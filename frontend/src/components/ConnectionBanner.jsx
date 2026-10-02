@@ -35,8 +35,8 @@ export function ConnectionBanner({ status, ageSeconds, error, onRetry }) {
 }
 
 /** The header pill. Three states, all derived from the last successful poll. */
-export function ConnectionPill({ status, ageSeconds }) {
-  const label = { [LIVE]: 'LIVE', [STALE]: 'STALE', [OFFLINE]: 'OFFLINE' }[status]
+export function ConnectionPill({ status, ageSeconds, liveLabel = 'LIVE' }) {
+  const label = { [LIVE]: liveLabel, [STALE]: 'STALE', [OFFLINE]: 'OFFLINE' }[status]
   const title =
     status === LIVE
       ? 'Last update under 6 seconds ago'

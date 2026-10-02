@@ -43,8 +43,8 @@ export function Header({ status, ageSeconds, rulesetVersion, onAttack, onReset, 
         <span className="model-tag" title="Ruleset version — the hash of the detection weights themselves">
           {rulesetVersion || '—'}
         </span>
-        {/* Was the string literal "LIVE", always. */}
-        <ConnectionPill status={status} ageSeconds={ageSeconds} />
+        <ConnectionPill status={status} ageSeconds={ageSeconds}
+                        liveLabel={publicDemo ? 'DEMO ONLINE' : 'LIVE'} />
         <div className="attack-dropdown" ref={menuRef}>
           <button className="btn btn-attack" onClick={() => setMenuOpen((o) => !o)} disabled={busy}
                   aria-haspopup="menu" aria-expanded={menuOpen} aria-controls="attack-menu">

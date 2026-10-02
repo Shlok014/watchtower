@@ -168,6 +168,8 @@ describe('Header', () => {
                    onReset={() => {}} busy={false} publicDemo />)
     expect(screen.getByRole('button', { name: 'Simulate Attack' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Reset All' })).not.toBeInTheDocument()
+    expect(screen.getByText('DEMO ONLINE')).toBeInTheDocument()
+    expect(screen.queryByText('LIVE')).not.toBeInTheDocument()
   })
 })
 
