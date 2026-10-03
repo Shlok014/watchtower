@@ -19,6 +19,7 @@ vi.mock('./api/client', async (importOriginal) => {
       ledger: vi.fn(),
       blocklist: vi.fn(),
       model: vi.fn(),
+      access: vi.fn(),
       verifyChain: vi.fn(),
       simulateAttack: vi.fn(),
       retrain: vi.fn(),
@@ -79,6 +80,7 @@ function happyBackend() {
   api.ledger.mockResolvedValue([])
   api.blocklist.mockResolvedValue({ entries: [], totals: {} })
   api.model.mockResolvedValue({ trained: false, current: null, rules: {}, history: [] })
+  api.access.mockResolvedValue({ can_write: true })
 }
 
 /** Let the mocked promises settle and any timers fire.
@@ -99,6 +101,24 @@ describe('App', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.useFakeTimers({ shouldAdvanceTime: true })
+  })
+
+  it('explains read-only access and disables owner controls', async () => {
+    happyBackend()
+    api.access.mockResolvedValue({ can_write: false })
+    api.blocklist.mockResolvedValue({
+      entries: [{ ip: '192.0.2.1', reason: 'test', events_dropped: 0, seconds_remaining: 30 }],
+      totals: { events_dropped_lifetime: 0 },
+    })
+    render(<App />)
+    await settle(100)
+    await waitFor(() => expect(screen.getByText('LIVE')).toBeInTheDocument())
+
+    expect(screen.getByText(/Read-only dashboard/)).toBeInTheDocument()
+    for (const name of [/Simulate Attack/, /Reset All/, /Retrain/, /Unblock/]) {
+      expect(screen.getByRole('button', { name })).toBeDisabled()
+    }
+    expect(api.simulateAttack).not.toHaveBeenCalled()
   })
 
   it('holds at the connection gate until a real request comes back', async () => {

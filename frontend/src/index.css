@@ -84,6 +84,14 @@ body {
 
 /* ─── App Layout ────────────────────────────────────────────────────────────── */
 .app { max-width: 1520px; margin: 0 auto; padding: 0.75rem 1.25rem 2rem; }
+.access-banner {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.3rem 0.6rem;
+  margin: -0.3rem 0 0.85rem; padding: 0.55rem 0.75rem;
+  border: 1px solid var(--border); border-left: 2px solid var(--amber);
+  border-radius: var(--radius-sm); background: var(--amber-dim);
+  color: var(--text-secondary); font-size: 0.76rem; line-height: 1.45;
+}
+.access-banner strong { color: var(--amber); font-weight: 700; white-space: nowrap; }
 
 /* ─── Header ────────────────────────────────────────────────────────────────── */
 .header {
@@ -550,3 +558,4 @@ tr.log-dropped { opacity: 0.5; }
 .metric-row strong { color: var(--text-primary, #e2e8f0); }
 
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }

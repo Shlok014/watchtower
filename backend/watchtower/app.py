@@ -10,7 +10,7 @@ and uptime read 0 forever. Every entry point now goes through ``create_app``.
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 
-from . import config, runtime, threatintel
+from . import access, config, runtime, threatintel
 from .api.routes import bp as api_bp
 from .detect import stream
 from .soar import playbooks
@@ -45,6 +45,12 @@ def create_app(cfg: config.Config | None = None, start_sources: bool = True) -> 
             not origin and request.headers.get("Sec-Fetch-Site") == "cross-site"
         ):
             return jsonify({"error": "cross_site_write_forbidden"}), 403
+        # Ledger validation computes a read-only verdict despite its legacy POST
+        # route. Every actual state-changing endpoint needs owner access.
+        if request.path == f"{API_PREFIX}/blockchain/validate" and request.method == "POST":
+            return None
+        if not access.can_write(cfg, request):
+            return jsonify({"error": "write_forbidden"}), 403
         return None
 
     app.register_blueprint(api_bp, url_prefix=API_PREFIX)

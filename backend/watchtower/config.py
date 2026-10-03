@@ -61,6 +61,8 @@ class Config:
     port: int
     alert_threshold: float
     sources: tuple[str, ...]
+    allow_local_writes: bool = False
+    write_token: str | None = field(default=None, repr=False)
 
     # Derived directories. Declared here so no other module has to know the
     # layout of data/.
@@ -72,6 +74,8 @@ class Config:
     samples_dir: Path = field(init=False)
 
     def __post_init__(self) -> None:
+        if self.write_token is not None and len(self.write_token) < 32:
+            raise ValueError("WATCHTOWER_WRITE_TOKEN must contain at least 32 characters")
         object.__setattr__(self, "feeds_dir", self.data_dir / "feeds")
         object.__setattr__(self, "datasets_dir", self.data_dir / "datasets")
         object.__setattr__(self, "drain_dir", self.data_dir / "drain")
@@ -107,6 +111,8 @@ def from_env() -> Config:
         port=_env_int("WATCHTOWER_PORT", 5001),
         alert_threshold=_env_float("WATCHTOWER_ALERT_THRESHOLD", 0.45),
         sources=_env_list("WATCHTOWER_SOURCES", ("synthetic",)),
+        allow_local_writes=os.environ.get("WATCHTOWER_ALLOW_LOCAL_WRITES") == "1",
+        write_token=os.environ.get("WATCHTOWER_WRITE_TOKEN") or None,
     )
 
 

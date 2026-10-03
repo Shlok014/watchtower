@@ -196,10 +196,11 @@ actions:
 
 `block_ip` writes to a `blocklist` table. The pipeline consumer checks that
 table **before detection runs**, marks matching events `dropped=1`, and counts
-the hit against the block that caused it. Measured on a live instance:
+the hit against the block that caused it. With the backend started in explicit
+local write mode (`WATCHTOWER_ALLOW_LOCAL_WRITES=1`), a live instance showed:
 
 ```
-$ curl -X POST localhost:5001/api/v1/simulate-attack -d '{"attack_type":"brute_force"}'
+$ curl -X POST localhost:5001/api/v1/simulate-attack -H 'Content-Type: application/json' -d '{"attack_type":"brute_force"}'
   Brute Force Attack triggered — 12 malicious events
 
 $ curl localhost:5001/api/v1/blocklist
@@ -526,11 +527,11 @@ recomputes something — which is the whole point.
 ## Tests
 
 ```bash
-cd backend  && .venv/bin/python -m pytest    # 141
-cd frontend && npm test                      # 43
+cd backend  && .venv/bin/python -m pytest    # 159
+cd frontend && npm test                      # 46
 ```
 
-154 tests covering the HTTP contract, the four ingestion sources (including a real
+159 backend tests covering the HTTP contract, the four ingestion sources (including a real
 UDP datagram end to end, and a tailer surviving both rotation and in-place
 truncation), the SOAR closed loop (blocked address → zero further alerts, N real
 drops), playbook validation, a webhook against a real HTTP server and a closed
@@ -616,14 +617,25 @@ resolved, and `GET /api/v1/config` reports it from a running one.
 | `WATCHTOWER_CORS_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173` | |
 | `WATCHTOWER_TRUSTED_HOSTS` | `localhost,127.0.0.1` | Host allowlist; add an intended hostname explicitly |
 | `WATCHTOWER_HOST` / `WATCHTOWER_PORT` | `127.0.0.1` / `5001` | |
+| `WATCHTOWER_ALLOW_LOCAL_WRITES` | unset | Set to `1` for tokenless writes during local development only |
+| `WATCHTOWER_WRITE_TOKEN` | unset | Server-only owner token, at least 32 characters; required for writes over a public host |
 
 The server binds loopback by default. CORS limits who can read responses, but
 it cannot stop a cross-site HTML form from posting to `/reset`. Unsafe requests
 now reject unapproved browser `Origin` headers and cross-site Fetch Metadata;
 Flask rejects untrusted Host headers to prevent DNS rebinding into loopback.
-These are browser defenses, not authentication. Do not expose the unrestricted
-development API to the internet without an authentication and authorization
-layer.
+State-changing API requests are **read-only by default**, even on loopback. For
+local development with the dashboard controls enabled, start the backend with
+`WATCHTOWER_ALLOW_LOCAL_WRITES=1`; this works only when the bind address,
+trusted hosts, request Host and connecting peer are all loopback. Do not enable
+that flag behind a reverse proxy. On a public host, leave it unset: visitors can
+inspect the dashboard and verify the ledger, while Simulate, Retrain, Reset and
+Unblock are disabled. An owner can configure `WATCHTOWER_WRITE_TOKEN` on the
+server and send `Authorization: Bearer <token>` from a private API client over
+HTTPS. The token is never put in the frontend bundle or returned by `/config`.
+`GET /api/v1/access` tells the dashboard whether its current request may write.
+Read-only `/config` and `/playbooks` responses show path basenames instead of
+absolute server paths.
 
 ## License
 

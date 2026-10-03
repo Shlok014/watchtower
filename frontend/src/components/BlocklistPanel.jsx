@@ -4,7 +4,7 @@ import { Panel, EmptyState } from './Panel'
 /* The panel that makes the closed loop visible. `events_dropped` counts events
    this pipeline really discarded before detection ran — not actions it reported
    taking. */
-export function BlocklistPanel({ blocklist, onUnblock, dimmed }) {
+export function BlocklistPanel({ blocklist, onUnblock, dimmed, canWrite = true }) {
   const entries = blocklist?.entries || []
   const totals = blocklist?.totals
   return (
@@ -28,7 +28,7 @@ export function BlocklistPanel({ blocklist, onUnblock, dimmed }) {
                   <td><strong>{e.events_dropped}</strong></td>
                   <td>{e.expired ? 'expired' : `${e.seconds_remaining}s`}</td>
                   <td>
-                    <button className="btn btn-validate" onClick={() => onUnblock(e.ip)}
+                    <button className="btn btn-validate" onClick={() => onUnblock(e.ip)} disabled={!canWrite}
                             title="Remove the block; this address's events resume being detected">
                       Unblock
                     </button>

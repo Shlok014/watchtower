@@ -5,7 +5,7 @@ import { Panel, EmptyState } from './Panel'
    The live dashboard's detection is a RULE ENGINE. The trained model scores
    replayed HDFS blocks, and its published F1 was measured on complete blocks —
    which the live partial-block scores are not. Every claim here is scoped. */
-export function ModelPanel({ model, onRetrain, retraining, dimmed }) {
+export function ModelPanel({ model, onRetrain, retraining, dimmed, canWrite = true }) {
   const current = model?.current
   const live = model?.live_scoring
   return (
@@ -13,7 +13,7 @@ export function ModelPanel({ model, onRetrain, retraining, dimmed }) {
            badge={current ? `model v${current.version}` : 'no model'}
            badgeColor={current ? 'purple' : 'amber'}
            actions={
-             <button className="btn btn-retrain" onClick={onRetrain} disabled={retraining}>
+             <button className="btn btn-retrain" onClick={onRetrain} disabled={retraining || !canWrite}>
                {retraining ? '⏳ Retraining…' : '🧠 Retrain'}
              </button>
            }>
