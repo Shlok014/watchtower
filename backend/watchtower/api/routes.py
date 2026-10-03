@@ -158,7 +158,9 @@ def get_playbooks():
     try:
         return jsonify(
             {
-                "playbooks": soar_engine.describe(),
+                "playbooks": soar_engine.describe(
+                    include_params=access.can_write(config.get(), request)
+                ),
                 "actions": sorted(soar_actions.ACTIONS),
                 "directory": (
                     str(playbooks.playbooks_dir())
@@ -168,7 +170,8 @@ def get_playbooks():
             }
         )
     except playbooks.PlaybookError as exc:
-        return jsonify({"error": "invalid_playbooks", "detail": str(exc)}), 500
+        detail = str(exc) if access.can_write(config.get(), request) else "invalid policy"
+        return jsonify({"error": "invalid_playbooks", "detail": detail}), 500
 
 
 @bp.route("/threat-intel", methods=["GET"])

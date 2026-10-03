@@ -130,20 +130,20 @@ def webhook(ctx: Context) -> Outcome:
         }
     ).encode()
 
-    req = urllib.request.Request(
-        url, data=payload, headers={"Content-Type": "application/json"}, method="POST"
-    )
     try:
+        req = urllib.request.Request(
+            url, data=payload, headers={"Content-Type": "application/json"}, method="POST"
+        )
         with urllib.request.urlopen(req, timeout=WEBHOOK_TIMEOUT_S) as resp:
             return Outcome(
-                EXECUTED, f"POST {url} → HTTP {resp.status}", data={"status": resp.status}
+                EXECUTED, f"webhook POST → HTTP {resp.status}", data={"status": resp.status}
             )
     except urllib.error.HTTPError as exc:
         # A 4xx/5xx is a real answer from a real server, and it is still a
         # failure to deliver.
-        return Outcome(FAILED, f"POST {url} → HTTP {exc.code}", data={"status": exc.code})
+        return Outcome(FAILED, f"webhook POST → HTTP {exc.code}", data={"status": exc.code})
     except (urllib.error.URLError, OSError, ValueError) as exc:
-        return Outcome(FAILED, f"POST {url} failed: {type(exc).__name__}: {exc}")
+        return Outcome(FAILED, f"webhook POST failed: {type(exc).__name__}")
 
 
 # ─── incident_report ─────────────────────────────────────────────────────────
@@ -280,6 +280,8 @@ def run(name: str, ctx: Context) -> Outcome:
     try:
         outcome = fn(ctx)
     except Exception as exc:
-        outcome = Outcome(FAILED, f"{type(exc).__name__}: {exc}")
+        # A lower-level webhook exception may include the URL in its message.
+        detail = type(exc).__name__ if name == "webhook" else f"{type(exc).__name__}: {exc}"
+        outcome = Outcome(FAILED, detail)
     outcome.duration_us = round((time.perf_counter() - t0) * 1e6, 1)
     return outcome

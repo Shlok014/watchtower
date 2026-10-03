@@ -224,7 +224,7 @@ def test_webhook_to_a_closed_port_fails_truthfully():
     )
     out = actions.run("webhook", ctx)
     assert out.status == actions.FAILED
-    assert "127.0.0.1:1" in out.detail
+    assert "127.0.0.1:1" not in out.detail
 
 
 def test_webhook_posts_for_real():
@@ -246,7 +246,7 @@ def test_webhook_posts_for_real():
         ctx = actions.Context(
             conn=db.connect(),
             alert={"id": 7, "ip": ATTACKER, "event": "brute_force", "severity": "critical"},
-            step_params={"url": f"http://127.0.0.1:{server.server_address[1]}/hook"},
+            step_params={"url": f"http://127.0.0.1:{server.server_address[1]}/secret-path"},
         )
         out = actions.run("webhook", ctx)
     finally:
@@ -254,6 +254,7 @@ def test_webhook_posts_for_real():
 
     assert out.status == actions.EXECUTED
     assert "HTTP 202" in out.detail
+    assert "secret-path" not in out.detail
     assert received and received[0]["alert_id"] == 7
     assert received[0]["ip"] == ATTACKER
 
@@ -417,6 +418,22 @@ def test_soar_steps_record_whether_a_failure_was_allowed(client):
     by_action = {s["action"]: s for s in record["execution_steps"]}
     assert by_action["block_ip"]["required"] is True
     assert by_action["webhook"]["required"] is False
+
+
+def test_legacy_webhook_details_are_redacted_from_all_read_endpoints(client):
+    """Old databases may already contain credential-bearing webhook URLs."""
+    process_log(_raw())
+    secret = "credential-in-webhook-path"
+    with db.write() as conn:
+        conn.execute(
+            "UPDATE soar_steps SET detail = ? WHERE action = 'webhook'",
+            (f"POST https://example.test/{secret} → HTTP 202",),
+        )
+
+    for endpoint in ("/soar-actions", "/alerts"):
+        body = client.get(f"{API_PREFIX}{endpoint}").get_json()
+        assert secret not in str(body)
+        assert "example.test" not in str(body)
 
 
 def test_a_v1_ledger_still_verifies_under_the_v2_canon():

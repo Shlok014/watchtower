@@ -160,6 +160,52 @@ def test_public_bind_without_token_is_read_only(isolated_config):
         assert public.get(_url("/stats"), base_url=base).get_json()["total_logs"] == 0
 
 
+def test_public_playbook_response_hides_webhook_credentials(isolated_config, monkeypatch):
+    from watchtower import config
+    from watchtower.soar import engine, playbooks
+
+    secret = "credential-in-webhook-path"
+    policy = playbooks.Playbook(
+        name="Notification",
+        trigger="notification",
+        priority="P2",
+        source="notification.yaml",
+        steps=(playbooks.Step("webhook", params={"url": f"https://example.test/{secret}"}),),
+    )
+    config.replace(host="0.0.0.0", trusted_hosts=("watchtower.example",))
+    app = create_app(start_sources=False)
+    monkeypatch.setattr(engine.playbooks_mod, "all_playbooks", lambda: {policy.trigger: policy})
+    with app.test_client() as public:
+        body = public.get(_url("/playbooks"), base_url="https://watchtower.example").get_json()
+        assert secret not in str(body)
+        assert body["playbooks"][0]["steps"][0]["action"] == "webhook"
+
+
+def test_owner_can_inspect_full_playbook_policy(isolated_config, monkeypatch):
+    from watchtower import config
+    from watchtower.soar import engine, playbooks
+
+    token = "owner-only-secret-token-with-at-least-32-characters"
+    secret = "credential-in-webhook-path"
+    policy = playbooks.Playbook(
+        name="Notification",
+        trigger="notification",
+        priority="P2",
+        source="notification.yaml",
+        steps=(playbooks.Step("webhook", params={"url": f"https://example.test/{secret}"}),),
+    )
+    config.replace(host="0.0.0.0", trusted_hosts=("watchtower.example",), write_token=token)
+    app = create_app(start_sources=False)
+    monkeypatch.setattr(engine.playbooks_mod, "all_playbooks", lambda: {policy.trigger: policy})
+    with app.test_client() as owner:
+        response = owner.get(
+            _url("/playbooks"),
+            base_url="https://watchtower.example",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert secret in str(response.get_json())
+
+
 def test_public_write_requires_configured_bearer_token(isolated_config):
     from watchtower import config
 

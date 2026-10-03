@@ -527,11 +527,11 @@ recomputes something — which is the whole point.
 ## Tests
 
 ```bash
-cd backend  && .venv/bin/python -m pytest    # 159
+cd backend  && .venv/bin/python -m pytest    # 162
 cd frontend && npm test                      # 46
 ```
 
-159 backend tests covering the HTTP contract, the four ingestion sources (including a real
+162 backend tests covering the HTTP contract, the four ingestion sources (including a real
 UDP datagram end to end, and a tailer surviving both rotation and in-place
 truncation), the SOAR closed loop (blocked address → zero further alerts, N real
 drops), playbook validation, a webhook against a real HTTP server and a closed
@@ -635,7 +635,9 @@ server and send `Authorization: Bearer <token>` from a private API client over
 HTTPS. The token is never put in the frontend bundle or returned by `/config`.
 `GET /api/v1/access` tells the dashboard whether its current request may write.
 Read-only `/config` and `/playbooks` responses show path basenames instead of
-absolute server paths.
+absolute server paths. Public `/playbooks` also omits operator-supplied action
+parameters, including webhook URLs. Webhook execution details never store a
+URL, and API reads redact older webhook details that may contain one.
 
 ## License
 
