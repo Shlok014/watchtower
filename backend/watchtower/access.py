@@ -21,7 +21,9 @@ def can_write(cfg: Config, request: Request) -> bool:
     if cfg.write_token:
         scheme, separator, supplied = request.headers.get("Authorization", "").partition(" ")
         return bool(
-            separator and scheme.lower() == "bearer" and supplied
+            separator
+            and scheme.lower() == "bearer"
+            and supplied
             and hmac.compare_digest(supplied.encode(), cfg.write_token.encode())
         )
 

@@ -463,9 +463,7 @@ def get_config():
     cfg = config.get()
     return jsonify(
         {
-            "database": (
-                str(cfg.db_path) if access.can_write(cfg, request) else cfg.db_path.name
-            ),
+            "database": (str(cfg.db_path) if access.can_write(cfg, request) else cfg.db_path.name),
             "retention_hours": cfg.retention_hours,
             "alert_threshold": cfg.alert_threshold,
             "configured_sources": list(cfg.sources),
