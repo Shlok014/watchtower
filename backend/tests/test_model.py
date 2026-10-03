@@ -9,6 +9,7 @@ started improving on its own.
 """
 
 import json
+import shutil
 
 import numpy as np
 import pytest
@@ -40,6 +41,173 @@ def test_the_split_is_frozen(tiny_data):
     assert np.array_equal(a_test, b_test)
     assert set(a_train.tolist()) & set(a_test.tolist()) == set(), "train and test overlap"
     assert len(a_train) + len(a_test) == len(y)
+
+
+def test_holdout_templates_are_not_mined_from_test_or_mixed_lines(tmp_path, monkeypatch):
+    """A held-out score must not use vocabulary learned from its own log lines."""
+    from watchtower.detect.parser import LogParser
+
+    ids = [f"blk_{i}" for i in range(8)]
+    labels = {block: i % 2 for i, block in enumerate(ids)}
+    y = np.array(list(labels.values()), dtype=np.int8)
+    train_idx, test_idx = model.frozen_split(y)
+    train_block, test_block = ids[train_idx[0]], ids[test_idx[0]]
+    lines = [
+        f"081109 203615 148 INFO dfs.DataNode: Received block {block} of size 64\n" for block in ids
+    ]
+    lines += [
+        f"081109 203615 148 INFO dfs.DataNode: HELDOUT_ONLY {test_block}\n",
+        f"081109 203615 148 INFO dfs.DataNode: MIXED_ONLY {train_block} {test_block}\n",
+    ]
+    path = tmp_path / "hdfs.log"
+    path.write_text("".join(lines))
+
+    class TinyDataset:
+        key = "test"
+        label = "test"
+
+        def log_path(self):
+            return path
+
+        def labels_path(self):
+            return features.SAMPLE.labels_path()
+
+    monkeypatch.setattr(features, "load_labels", lambda _dataset: labels)
+    parser = LogParser(persist=False)
+    parsed, matched = [], []
+    real_parse, real_match = parser.parse, parser.match
+
+    def spy_parse(content):
+        parsed.append(content)
+        return real_parse(content)
+
+    def spy_match(content):
+        before = dict(parser.templates())
+        result = real_match(content)
+        assert parser.templates() == before, "held-out matching grew the vocabulary"
+        matched.append(content)
+        return result
+
+    monkeypatch.setattr(parser, "parse", spy_parse)
+    monkeypatch.setattr(parser, "match", spy_match)
+    X, actual_y, blocks, template_ids, stats = features.build_matrix_holdout(
+        parser, dataset=TinyDataset(), progress_every=0
+    )
+
+    assert blocks == ids
+    assert actual_y.tolist() == y.tolist()
+    assert X.shape == (8, len(template_ids))
+    assert all("HELDOUT_ONLY" not in template for template in parser.templates().values())
+    assert all("MIXED_ONLY" not in template for template in parser.templates().values())
+    assert not any("HELDOUT_ONLY" in content or "MIXED_ONLY" in content for content in parsed)
+    assert any("HELDOUT_ONLY" in content for content in matched)
+    assert any("MIXED_ONLY" in content for content in matched)
+    assert stats["held_out_unmatched_lines"] >= 1
+    assert stats["mixed_split_lines"] == 1
+
+
+def test_legacy_feature_cache_is_rejected_before_retraining():
+    X = np.zeros((4, 1), dtype=np.float32)
+    y = np.array([0, 1, 0, 1], dtype=np.int8)
+    features.save_cache(features.SAMPLE, X, y, [f"blk_{i}" for i in range(4)], [1], {"blocks": 4})
+    assert features.load_cache(features.SAMPLE) is None
+
+
+def test_cached_matrix_is_rebuilt_if_its_miner_state_changes():
+    """Columns and the parser that named them must be one versioned unit."""
+    from watchtower.detect.parser import state_path
+
+    first = train.prepare(dataset=features.SAMPLE, rebuild=True)
+    assert first[-1] is False
+    assert train.prepare(dataset=features.SAMPLE)[-1] is True
+    state_path("hdfs_sample").write_bytes(b"stale or corrupt state")
+    rebuilt = train.prepare(dataset=features.SAMPLE)
+    assert rebuilt[-1] is False
+    assert rebuilt[3] == first[3]
+
+
+@pytest.mark.parametrize("changed_file", ["log", "labels"])
+def test_cached_matrix_is_rebuilt_if_source_changes(tmp_path, changed_file):
+    """A cache must describe the bytes now on disk, even if names stay the same."""
+    from watchtower import config
+
+    source = features.SAMPLE
+    dest = config.get().datasets_dir
+    dest.mkdir(parents=True)
+    shutil.copyfile(source.log_path(), dest / "test.log")
+    shutil.copyfile(source.labels_path(), dest / "labels.csv")
+    dataset = features.Dataset("mutable", "mutable", "test.log", "labels.csv", False)
+    assert train.prepare(dataset, rebuild=True)[-1] is False
+    assert train.prepare(dataset)[-1] is True
+    path = dataset.log_path() if changed_file == "log" else dataset.labels_path()
+    with path.open("a") as fh:
+        fh.write("\n")
+    assert train.prepare(dataset)[-1] is False
+
+
+def test_live_scoring_rejects_a_miner_different_from_its_model():
+    from watchtower.detect.parser import state_path
+
+    train.retrain(dataset=features.SAMPLE, rebuild=True)
+    assert stream.enable() is not None
+    state_path("hdfs_sample").write_bytes(b"another miner with the same possible columns")
+    assert stream.enable() is None
+    assert "miner" in stream.load_error().lower()
+
+
+def test_a_sample_run_does_not_replace_the_active_full_model():
+    from watchtower.detect.parser import state_path
+
+    full = features.Dataset(
+        "full", "full fixture", features.SAMPLE.log_name, features.SAMPLE.labels_name, True
+    )
+    first = train.retrain(dataset=full, rebuild=True)
+    full_state = state_path("hdfs")
+    digest = features.file_sha256(full_state)
+    train.retrain(dataset=features.SAMPLE, rebuild=True)
+    assert model.latest_entry()["version"] == first["version"]
+    assert features.file_sha256(full_state) == digest
+    assert stream.enable() is not None
+    assert stream.get().bundle.version == first["version"]
+
+
+def test_discovered_block_order_follows_log_order(tmp_path, monkeypatch):
+    """A fixed seed is not a fixed split if set iteration permutes rows."""
+    from watchtower.detect.parser import LogParser
+
+    ids = [f"blk_{i}" for i in range(12)]
+    path = tmp_path / "ordered.log"
+    path.write_text("081109 203615 148 INFO dfs.DataNode: Received blocks " + " ".join(ids) + "\n")
+
+    class TinyDataset:
+        key = "ordered"
+        label = "ordered"
+
+        def log_path(self):
+            return path
+
+        def labels_path(self):
+            return features.SAMPLE.labels_path()
+
+    monkeypatch.setattr(
+        features, "load_labels", lambda _dataset: {b: i % 2 for i, b in enumerate(ids)}
+    )
+    _X, _y, blocks, _templates, _stats = features.build_matrix_holdout(
+        LogParser(persist=False), dataset=TinyDataset(), progress_every=0
+    )
+    assert blocks == ids
+
+
+def test_unsupervised_baseline_uses_only_features_and_all_training_rows():
+    """The baseline cannot use test prevalence or normal-only training labels."""
+    from eval import benchmark
+
+    rng = np.random.default_rng(12)
+    X_train = rng.normal(size=(40, 3)).astype(np.float32)
+    X_test = rng.normal(size=(8, 3)).astype(np.float32)
+    prediction, scores = benchmark.isolation_baseline(X_train, X_test)
+    assert prediction.shape == (8,)
+    assert scores.shape == (8,)
 
 
 def test_metrics_come_from_held_out_rows_only(tiny_data):

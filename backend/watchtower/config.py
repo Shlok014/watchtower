@@ -56,10 +56,13 @@ class Config:
     db_path: Path
     retention_hours: int
     cors_origins: tuple[str, ...]
+    trusted_hosts: tuple[str, ...]
     host: str
     port: int
     alert_threshold: float
     sources: tuple[str, ...]
+    allow_local_writes: bool = False
+    write_token: str | None = field(default=None, repr=False)
 
     # Derived directories. Declared here so no other module has to know the
     # layout of data/.
@@ -71,6 +74,8 @@ class Config:
     samples_dir: Path = field(init=False)
 
     def __post_init__(self) -> None:
+        if self.write_token is not None and len(self.write_token) < 32:
+            raise ValueError("WATCHTOWER_WRITE_TOKEN must contain at least 32 characters")
         object.__setattr__(self, "feeds_dir", self.data_dir / "feeds")
         object.__setattr__(self, "datasets_dir", self.data_dir / "datasets")
         object.__setattr__(self, "drain_dir", self.data_dir / "drain")
@@ -89,14 +94,16 @@ def from_env() -> Config:
         data_dir=data_dir,
         db_path=db_path,
         retention_hours=_env_int("WATCHTOWER_RETENTION_HOURS", 24),
-        # Wide-open CORS was the default before this. On a dashboard that will
-        # happily POST /api/v1/reset, any page in the browser could have wiped
-        # the store. The dev server's two spellings of localhost are both here
-        # because Vite prints one and browsers sometimes resolve the other.
+        # CORS restricts response access; the app factory separately rejects
+        # cross-site writes, because a form POST can mutate without reading a
+        # response. Keep both spellings used by the local Vite frontend.
         cors_origins=_env_list(
             "WATCHTOWER_CORS_ORIGINS",
             ("http://localhost:5173", "http://127.0.0.1:5173"),
         ),
+        # Also guards DNS rebinding: a page on an attacker-controlled hostname
+        # must not be able to treat the loopback API as its own origin.
+        trusted_hosts=_env_list("WATCHTOWER_TRUSTED_HOSTS", ("localhost", "127.0.0.1")),
         # Loopback by default. The previous host was 0.0.0.0, which published an
         # unauthenticated API with a destructive endpoint to every machine on
         # the network the moment the demo was run on café wifi.
@@ -104,6 +111,8 @@ def from_env() -> Config:
         port=_env_int("WATCHTOWER_PORT", 5001),
         alert_threshold=_env_float("WATCHTOWER_ALERT_THRESHOLD", 0.45),
         sources=_env_list("WATCHTOWER_SOURCES", ("synthetic",)),
+        allow_local_writes=os.environ.get("WATCHTOWER_ALLOW_LOCAL_WRITES") == "1",
+        write_token=os.environ.get("WATCHTOWER_WRITE_TOKEN") or None,
     )
 
 

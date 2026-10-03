@@ -12,7 +12,7 @@ React.
 [![License](https://img.shields.io/github/license/Shlok014/watchtower)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776ab.svg)](backend/requirements.txt)
 [![Node 22+](https://img.shields.io/badge/node-22%2B-5fa04e.svg)](frontend/package.json)
-[![Tests](https://img.shields.io/badge/tests-141%20backend%20%2B%2045%20frontend-34d399.svg)](#tests)
+[![Tests](https://img.shields.io/badge/tests-154%20backend%20%2B%2045%20frontend-34d399.svg)](#tests)
 
 [![CI](https://github.com/Shlok014/watchtower/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Shlok014/watchtower/actions/workflows/ci.yml)
 
@@ -82,7 +82,7 @@ than an accident:
 | Normalization | Severity and event-type classification | ✅ real |
 | **IP reputation** | Live lookup against the **Tor Project bulk exit list** (1,380 entries) and **FireHOL level1** (4,580 CIDRs), cached locally with a provenance manifest. Every verdict names its feed and fetch date. Non-routable addresses short-circuit before the lookup. | ✅ **real, measured** |
 | Detection (live dashboard) | Sliding-window features (failed logins/60s, event rate/30s) + reputation, weighted. Deterministic: identical input and window state give an identical score. Versioned by the hash of the weights themselves. | ✅ real rules — **not** ML, and not called ML |
-| **Detection (model)** | **Drain3 template mining → per-block count vectors → scikit-learn**, measured on the full HDFS_v1 benchmark and persisted as a versioned artefact. `POST /api/v1/retrain` refits it and returns a real delta — 0.0000 on unchanged data. Live replay scores partial blocks and never borrows the benchmark's F1. | ✅ **real, measured, versioned** |
+| **Detection (model)** | **Drain3 template mining → per-block count vectors → scikit-learn**, persisted as a versioned artefact. The miner fits training blocks only; held-out lines can match but cannot create templates. `POST /api/v1/retrain` reports measured deltas. Live replay scores partial blocks and never borrows benchmark F1. | ✅ **real, measured, versioned** |
 | Alerting | Threshold 0.45, every alert carries the rules that fired and their evidence | ✅ real |
 | **SOAR** | **A closed loop.** YAML playbooks; `block_ip` writes to a blocklist the consumer checks *before* detection, so a blocked address really is suppressed and the drops are counted. Webhooks POST for real. Incident reports are real files citing the ledger blocks that cover their evidence. Alert status is earned: `contained` / `action_failed`, never assumed. | ✅ **real** — enforcement is at the ingestion layer, not a firewall |
 | **Audit ledger** | **Tamper-evident.** Every digest is recomputed from the live event row on verify, and the header digest covers height, timestamp, prev_hash and payload — so editing an event, rewriting a block, back-dating one, or deleting one is all detected and distinguished. | ✅ **real** |
@@ -196,10 +196,11 @@ actions:
 
 `block_ip` writes to a `blocklist` table. The pipeline consumer checks that
 table **before detection runs**, marks matching events `dropped=1`, and counts
-the hit against the block that caused it. Measured on a live instance:
+the hit against the block that caused it. With the backend started in explicit
+local write mode (`WATCHTOWER_ALLOW_LOCAL_WRITES=1`), a live instance showed:
 
 ```
-$ curl -X POST localhost:5001/api/v1/simulate-attack -d '{"attack_type":"brute_force"}'
+$ curl -X POST localhost:5001/api/v1/simulate-attack -H 'Content-Type: application/json' -d '{"attack_type":"brute_force"}'
   Brute Force Attack triggered — 12 malicious events
 
 $ curl localhost:5001/api/v1/blocklist
@@ -342,6 +343,12 @@ Full numbers, and how to reproduce them: **[docs/METRICS.md](docs/METRICS.md)**.
 Every figure there is emitted by `python -m eval.benchmark`; none is typed by
 hand.
 
+> **Evaluation protocol:** The split happens before template mining. Drain sees
+> training blocks only; 5,588,020 of 5,588,021 held-out lines matched that
+> frozen vocabulary. No line in the full dataset mentioned blocks on both
+> sides of this split. The older transductive results were superseded by this
+> full HDFS_v1 rerun. See [the measured results page](docs/METRICS.md).
+
 **Log parsing** — grouping accuracy against loghub's ground-truth templates:
 
 | Dataset | True templates | Mined | Grouping accuracy |
@@ -355,21 +362,21 @@ blocks (2.93% anomalous), 45 mined templates, stratified 50/50 split at seed 42:
 | Model | Supervised | Precision | Recall | F1 | ROC-AUC |
 |---|---|---:|---:|---:|---:|
 | LogisticRegression | yes | 0.9605 | 0.9998 | **0.9797** | 0.9994 |
-| DecisionTree | yes | 0.9986 | 0.9987 | **0.9986** | 0.9996 |
-| IsolationForest | no | 0.0639 | 0.0640 | **0.0640** | 0.7014 |
+| DecisionTree | yes | 0.9986 | 0.9986 | **0.9986** | 0.9996 |
+| IsolationForest | no | 0.1969 | 0.7150 | **0.3087** | 0.9465 |
 
-Parse-and-featurise throughput: **103,181 lines/sec** (108.3s to parse and
-featurise 11.2M lines). This benchmark excludes storage, ledger hashing, live
-detection, alerting, and SOAR.
+Parse-and-featurise throughput: **89,055 lines/sec** (125.5s to read, mine,
+and featurise 11.2M lines over three passes). This benchmark excludes storage,
+ledger hashing, live detection, alerting, and SOAR.
 
 Three things worth saying plainly rather than letting the table imply otherwise:
 
 * **HDFS is a near-separable benchmark.** F1 above 0.95 on template count
   vectors is the expected result here and matches published loglizer baselines.
   It is not evidence of anything novel in this repo.
-* **The unsupervised row is bad, and it is the honest one.** IsolationForest gets
-  0.0640 — that is the real cost of having no labels, which is exactly the
-  situation the live dashboard is in.
+* **The IsolationForest row is genuinely unsupervised.** It fits every training
+  row without labels and uses a fixed automatic threshold. Its 0.3087 F1 is a
+  comparison to the supervised models, not a score for the live dashboard.
 * **These results are about HDFS, not the dashboard.** The live stream is
   synthetic and its detection is a rule engine. The two are deliberately
   separate and neither page claims otherwise.
@@ -380,27 +387,23 @@ numbers is not a results table.
 
 ### The model is a versioned artefact, not a script output
 
-The LogisticRegression row is a real file on disk, and `POST /api/v1/retrain`
+The LogisticRegression row comes from a persisted model. `POST /api/v1/retrain`
 refits it, evaluates it on the same frozen held-out half, and returns what
 changed. Each version records its seed, its split indices, its sklearn version,
 its parameters, and a SHA-256 of the exact feature matrix it saw.
 
-```
-$ curl -X POST localhost:5001/api/v1/retrain
-  version: 2      fit_seconds: 1.106      total_seconds: 1.87
-  metrics:      f1 0.9797  precision 0.9605  recall 0.9998
-  prev_metrics: f1 0.9797  precision 0.9605  recall 0.9998
-  delta_f1: 0.0
-```
+For an unchanged cached matrix, the endpoint returns the persisted model
+version, measured metrics, the prior version's metrics, and `delta_f1: 0.0`.
 
 **`delta_f1: 0.0`** confirms that retraining on unchanged data produces an
 unchanged evaluation result. The endpoint returns measured fit time, versioned
 metadata, metrics, and deltas from the persisted prior model.
 
-Retraining takes under two seconds against 575,061 blocks because the feature
-matrix is cached alongside the template ids that define its columns. The two are
-meaningless apart: re-parsing would re-mine the templates, and the column space
-would shift underneath two models that are supposed to be comparable.
+Cached retraining uses the persisted matrix for 575,061 blocks because the feature
+matrix is cached alongside the template ids that define its columns. The cache
+is reused only when the log, labels, and miner state hashes still match. Full
+and sample runs have separate miner state; a sample smoke run cannot replace
+the active full model. Live scoring refuses a model whose miner hash differs.
 
 ### The model in the live pipeline
 
@@ -524,11 +527,11 @@ recomputes something — which is the whole point.
 ## Tests
 
 ```bash
-cd backend  && .venv/bin/python -m pytest    # 141
-cd frontend && npm test                      # 43
+cd backend  && .venv/bin/python -m pytest    # 162
+cd frontend && npm test                      # 46
 ```
 
-141 tests covering the HTTP contract, the four ingestion sources (including a real
+162 backend tests covering the HTTP contract, the four ingestion sources (including a real
 UDP datagram end to end, and a tailer surviving both rotation and in-place
 truncation), the SOAR closed loop (blocked address → zero further alerts, N real
 drops), playbook validation, a webhook against a real HTTP server and a closed
@@ -552,7 +555,7 @@ make dev       # API on :5001, dashboard on :5173
 
 | | |
 |---|---|
-| `make test` | 141 backend + 45 frontend |
+| `make test` | 154 backend + 45 frontend |
 | `make lint` | ruff, eslint, and the honesty gate |
 | `make bench` | regenerate `docs/METRICS.md` from a real run |
 | `make demo` | verify the ledger, corrupt one event with raw SQL, verify again |
@@ -612,13 +615,29 @@ resolved, and `GET /api/v1/config` reports it from a running one.
 | `WATCHTOWER_ALERT_THRESHOLD` | `0.45` | changing it changes `ruleset_version` |
 | `WATCHTOWER_SOURCES` | `synthetic` | comma-separated |
 | `WATCHTOWER_CORS_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173` | |
+| `WATCHTOWER_TRUSTED_HOSTS` | `localhost,127.0.0.1` | Host allowlist; add an intended hostname explicitly |
 | `WATCHTOWER_HOST` / `WATCHTOWER_PORT` | `127.0.0.1` / `5001` | |
+| `WATCHTOWER_ALLOW_LOCAL_WRITES` | unset | Set to `1` for tokenless writes during local development only |
+| `WATCHTOWER_WRITE_TOKEN` | unset | Server-only owner token, at least 32 characters; required for writes over a public host |
 
-Two of those defaults are deliberate changes from what the demo shipped with.
-CORS was `CORS(app)` — any origin — on an unauthenticated API that includes a
-destructive `POST /reset`, so any page open in the browser could have emptied
-the store. And the server bound `0.0.0.0`, publishing that same API to every
-machine on the network the moment the demo ran on café wifi.
+The server binds loopback by default. CORS limits who can read responses, but
+it cannot stop a cross-site HTML form from posting to `/reset`. Unsafe requests
+now reject unapproved browser `Origin` headers and cross-site Fetch Metadata;
+Flask rejects untrusted Host headers to prevent DNS rebinding into loopback.
+State-changing API requests are **read-only by default**, even on loopback. For
+local development with the dashboard controls enabled, start the backend with
+`WATCHTOWER_ALLOW_LOCAL_WRITES=1`; this works only when the bind address,
+trusted hosts, request Host and connecting peer are all loopback. Do not enable
+that flag behind a reverse proxy. On a public host, leave it unset: visitors can
+inspect the dashboard and verify the ledger, while Simulate, Retrain, Reset and
+Unblock are disabled. An owner can configure `WATCHTOWER_WRITE_TOKEN` on the
+server and send `Authorization: Bearer <token>` from a private API client over
+HTTPS. The token is never put in the frontend bundle or returned by `/config`.
+`GET /api/v1/access` tells the dashboard whether its current request may write.
+Read-only `/config` and `/playbooks` responses show path basenames instead of
+absolute server paths. Public `/playbooks` also omits operator-supplied action
+parameters, including webhook URLs. Webhook execution details never store a
+URL, and API reads redact older webhook details that may contain one.
 
 ## License
 

@@ -9,7 +9,7 @@ only discover it by rendering an empty cell.
 
 from flask import Blueprint, abort, jsonify, request
 
-from .. import config, ledger, runtime, telemetry, threatintel
+from .. import access, config, ledger, runtime, telemetry, threatintel
 from ..detect import model, rules, stream, train
 from ..pipeline.consumer import process_log
 from ..soar import actions as soar_actions
@@ -20,6 +20,12 @@ from ..store import db as store_db
 from ..store import repos, retention_note
 
 bp = Blueprint("api", __name__)
+
+
+@bp.route("/access", methods=["GET"])
+def write_access():
+    """Tell this client whether owner-only controls can be used right now."""
+    return jsonify({"can_write": access.can_write(config.get(), request)})
 
 
 def query_int(name: str, default: int, lo: int, hi: int) -> int:
@@ -152,13 +158,20 @@ def get_playbooks():
     try:
         return jsonify(
             {
-                "playbooks": soar_engine.describe(),
+                "playbooks": soar_engine.describe(
+                    include_params=access.can_write(config.get(), request)
+                ),
                 "actions": sorted(soar_actions.ACTIONS),
-                "directory": str(playbooks.playbooks_dir()),
+                "directory": (
+                    str(playbooks.playbooks_dir())
+                    if access.can_write(config.get(), request)
+                    else playbooks.playbooks_dir().name
+                ),
             }
         )
     except playbooks.PlaybookError as exc:
-        return jsonify({"error": "invalid_playbooks", "detail": str(exc)}), 500
+        detail = str(exc) if access.can_write(config.get(), request) else "invalid policy"
+        return jsonify({"error": "invalid_playbooks", "detail": detail}), 500
 
 
 @bp.route("/threat-intel", methods=["GET"])
@@ -453,7 +466,7 @@ def get_config():
     cfg = config.get()
     return jsonify(
         {
-            "database": str(cfg.db_path),
+            "database": (str(cfg.db_path) if access.can_write(cfg, request) else cfg.db_path.name),
             "retention_hours": cfg.retention_hours,
             "alert_threshold": cfg.alert_threshold,
             "configured_sources": list(cfg.sources),

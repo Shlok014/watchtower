@@ -131,6 +131,7 @@ export const api = {
   model: () => get('/model'),
   playbooks: () => get('/playbooks'),
   config: () => get('/config'),
+  access: () => get('/access'),
   threatIntel: () => get('/threat-intel'),
 
   verifyChain: () => post('/blockchain/validate'),

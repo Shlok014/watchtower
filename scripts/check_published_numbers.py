@@ -7,10 +7,10 @@ from it in the same call, so those two cannot disagree. **The README and the
 handoff are hand-written**, and that is the gap this closes: a figure copied
 into prose today is a figure nobody re-copies when the benchmark is re-run.
 
-That is not hypothetical here. Unifying the frozen-split definition across the
-project moved IsolationForest from 0.0775 to 0.0640 and parse throughput from
-66,273 to 103,181 lines/sec. Both numbers appeared in three documents. Catching
-that by rereading three files is exactly the job a script should have.
+That is not hypothetical here. Changing the evaluation to train-only template
+mining and a label-free IsolationForest baseline moved its F1 to 0.3087 and
+parse throughput to 88,351 lines/sec. Both numbers appear in three documents.
+Catching drift by rereading them is exactly the job a script should have.
 
 The check is deliberately dumb: every figure from metrics.json must appear
 **as a literal string, formatted the way the document formats it**, in each
