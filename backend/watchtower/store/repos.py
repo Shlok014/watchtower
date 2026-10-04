@@ -242,6 +242,17 @@ def alert_within_cooldown(conn, ip: str, event: str, ruleset_version: str, since
     )
 
 
+def has_real_origin(conn=None) -> bool:
+    """Two indexed seeks keep the public-read gate cheap on a synthetic demo."""
+    conn = conn or db.connect()
+    return bool(
+        conn.execute(
+            """SELECT EXISTS(SELECT 1 FROM events WHERE origin < 'synthetic')
+                    OR EXISTS(SELECT 1 FROM events WHERE origin > 'synthetic')"""
+        ).fetchone()[0]
+    )
+
+
 def insert_alert(conn, alert: dict, event_id: int | None) -> int:
     cur = conn.execute(
         """INSERT INTO alerts (event_id, ts_ms, event, source, ip, user, severity,

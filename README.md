@@ -661,12 +661,15 @@ State-changing API requests are **read-only by default**, even on loopback. For
 local development with the dashboard controls enabled, start the backend with
 `WATCHTOWER_ALLOW_LOCAL_WRITES=1`; this works only when the bind address,
 trusted hosts, request Host and connecting peer are all loopback. Do not enable
-that flag behind a reverse proxy. On a public host, leave it unset: visitors can
-inspect the dashboard and verify the ledger, while Simulate, Retrain, Reset and
-Unblock are disabled. An owner can configure `WATCHTOWER_WRITE_TOKEN` on the
-server and send `Authorization: Bearer <token>` from a private API client over
-HTTPS. The token is never put in the frontend bundle or returned by `/config`.
-`GET /api/v1/access` tells the dashboard whether its current request may write.
+that flag behind a reverse proxy. On a public host, a synthetic-only demo is
+readable while Simulate, Retrain, Reset and Unblock are disabled. If any real
+source is configured or real-origin events remain in the store, anonymous API
+reads also return `403 read_forbidden`; a public dashboard must not expose real
+log text, usernames, addresses, or incident details. An owner can configure
+`WATCHTOWER_WRITE_TOKEN` on the server and send `Authorization: Bearer <token>`
+from a private API client over HTTPS to read and write. The token is never put
+in the frontend bundle or returned by `/config`. `GET /api/v1/access` reports
+both `can_read` and `can_write` for the current request.
 Read-only `/config` and `/playbooks` responses show path basenames instead of
 absolute server paths. Public `/playbooks` also omits operator-supplied action
 parameters, including webhook URLs. Webhook execution details never store a
