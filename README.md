@@ -83,7 +83,7 @@ than an accident:
 | **Log ingestion** | Four sources through one pipeline: **UDP syslog** (RFC 3164 + 5424), **file tail** with inode rotation detection, **dataset replay** of real loghub logs, and the synthetic generator. Every event carries a mandatory `origin`, and the dashboard groups by it. | ✅ **real** — synthetic input still available, and labelled |
 | Normalization | Severity and event-type classification | ✅ real |
 | **IP reputation** | Live lookup against the **Tor Project bulk exit list** (1,380 entries) and **FireHOL level1** (4,580 CIDRs), cached locally with a provenance manifest. Every verdict names its feed and fetch date. Non-routable addresses short-circuit before the lookup. | ✅ **real, measured** |
-| Detection (live dashboard) | Sliding-window features (failed logins/60s, event rate/30s) + reputation, weighted. Deterministic: identical input and window state give an identical score. Versioned by the hash of the weights themselves. | ✅ real rules — **not** ML, and not called ML |
+| Detection (live dashboard) | Sliding-window features (failed logins/60s, event rate/30s) + reputation, weighted. Deterministic: identical input and window state give an identical score. The ruleset fingerprint covers weights, windows, cooldown, threshold, and the file-tail service-account signal. | ✅ real rules — **not** ML, and not called ML |
 | Live shadow profile | Offline-fitted normal-window envelope scores those live rule features and stores a separate event-linked verdict. Missing/corrupt profiles and blocked events have explicit states. It does not raise alerts; synthetic replay evidence is [reported separately](docs/METRICS.md#live-shadow-evaluation). | ✅ implemented, **shadow only** |
 | **Detection (model)** | **Drain3 template mining → per-block count vectors → scikit-learn**, persisted as a versioned artefact. The miner fits training blocks only; held-out lines can match but cannot create templates. `POST /api/v1/retrain` reports measured deltas. Live replay scores partial blocks and never borrows benchmark F1. | ✅ **real, measured, versioned** |
 | Alerting | Threshold 0.45; each alert carries fired rules and evidence. A durable 60-second cooldown per IP and event type prevents repeated alerts and SOAR actions; an analyst unblock resets it. [Real-log alert burden](docs/METRICS.md#openssh-live-rule-replay) is measured separately from detection accuracy. | ✅ real |
@@ -120,11 +120,12 @@ use this demo profile to judge real traffic. `/api/v1/live-shadow/status` shows
 which profile, if any, the running process loaded.
 
 An [independently labeled AIT testbed auth-log replay](docs/METRICS.md#independently-labeled-auth-log-replay)
-also exposes a current limitation: Watchtower ingests all 272 lines but raises
-no alerts on eight publisher-labeled privilege-escalation lines. The file
-parser treats them all as `log_info`; the rule detector has no evidence to score
-them as attacks. This one simulated slice is a negative test of that path, not
-a production recall estimate or a claim about SSH brute-force detection.
+exposed a blind spot: before the service-account `su` rule, Watchtower ingested
+all 272 `russellmitchell` auth-log lines as `log_info` and alerted on none of
+eight publisher-labeled privilege-escalation lines. The focused rule now alerts
+on one of those eight lines and one of 12 labeled lines in a separate AIT
+scenario. Most labeled lines remain unalerted; these simulated slices are
+neither a production recall estimate nor a claim about SSH brute-force detection.
 
 ## Ingestion sources
 

@@ -40,7 +40,7 @@ export function Header({ status, ageSeconds, rulesetVersion, onAttack, onReset, 
         </div>
       </div>
       <div className="header-controls">
-        <span className="model-tag" title="Ruleset version — the hash of the detection weights themselves">
+        <span className="model-tag" title="Ruleset fingerprint — weights, windows, cooldown, threshold, and file auth signal">
           {rulesetVersion || '—'}
         </span>
         {/* Was the string literal "LIVE", always. */}

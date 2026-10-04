@@ -22,6 +22,7 @@ import yaml
 from watchtower.app import API_PREFIX, create_app
 from watchtower.pipeline.consumer import process_log
 from watchtower.soar import actions, engine, playbooks
+from watchtower.sources import file_tailer
 from watchtower.store import db, repos
 
 ATTACKER = "203.0.113.77"
@@ -276,6 +277,34 @@ def test_incident_report_writes_real_files_with_ledger_coverage(isolated_config)
     assert "python -m watchtower ledger verify" in body
     # And it says plainly what it did not do.
     assert "not a remediation" in body
+
+
+def test_local_service_su_report_cites_only_triggering_event(isolated_config, monkeypatch, capsys):
+    monkeypatch.delenv("WATCHTOWER_WEBHOOK_URL", raising=False)
+    benign = file_tailer.parse_line(
+        "Jan 24 04:37:39 intranet-server sshd[12]: Accepted publickey for alice",
+        "/var/log/auth.log",
+    )
+    trigger = file_tailer.parse_line(
+        "Jan 24 04:37:40 intranet-server su[27950]: Successful su for jhall by www-data",
+        "/var/log/auth.log",
+    )
+    benign_id = process_log(benign)["id"]
+    trigger_id = process_log(trigger)["id"]
+
+    report = next(isolated_config.incidents_dir.glob("INC-*.json"))
+    record = json.loads(report.read_text())
+    body = report.with_suffix(".md").read_text()
+    assert record["evidence_event_ids"] == [trigger_id]
+    assert benign_id not in record["evidence_event_ids"]
+    assert record["covering_ledger_blocks"]
+    assert record["evidence_scope"] == "triggering_local_event"
+    assert "local host" in body
+    assert "events from this address" not in body
+    assert "from 127.0.0.1" not in body
+    notice = capsys.readouterr().out
+    assert "by www-data on intranet-server" in notice
+    assert "from 127.0.0.1" not in notice
 
 
 def test_incident_report_ids_increment_within_a_day():

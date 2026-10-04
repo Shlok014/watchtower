@@ -166,3 +166,22 @@ def test_replay_rejects_unpinned_source(tmp_path):
     labels.write_text('{"line":1,"labels":["attack"]}\n')
     with pytest.raises(ValueError, match="SHA-256"):
         ait_auth.evaluate(raw, labels)
+
+
+def test_separate_scenario_has_its_own_source_pins_and_identity(tmp_path, monkeypatch):
+    raw = b"Jan 24 04:37:40 host su[1]: Successful su for alice by www-data\n"
+    labels = b'{"line":1,"labels":["escalate"]}\n'
+    raw_path = tmp_path / "auth.log"
+    labels_path = tmp_path / "auth.labels.jsonl"
+    raw_path.write_bytes(raw)
+    labels_path.write_bytes(labels)
+    monkeypatch.setattr(ait_auth, "WARDBECK_RAW_SHA256", hashlib.sha256(raw).hexdigest())
+    monkeypatch.setattr(ait_auth, "WARDBECK_LABEL_SHA256", hashlib.sha256(labels).hexdigest())
+
+    result = ait_auth.evaluate(raw_path, labels_path, scenario="wardbeck")
+    assert result["source"]["scenario"] == "wardbeck"
+    assert result["source"]["sha256"] == hashlib.sha256(raw).hexdigest()
+    assert result["labels"]["sha256"] == hashlib.sha256(labels).hexdigest()
+    assert result["confusion"]["tp"] == 1
+    with pytest.raises(ValueError, match="unknown AIT scenario"):
+        ait_auth.evaluate(raw_path, labels_path, scenario="made_up")

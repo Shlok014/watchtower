@@ -168,7 +168,23 @@ def incident_report(ctx: Context) -> Outcome:
 
     alert = ctx.alert
     ip = alert.get("ip", "")
-    evidence = repos.recent_events_for_ip(ctx.conn, ip, limit=20) if ip else []
+    triggering_event = repos.event_for_alert(ctx.conn, alert["id"])
+    local_file_event = (
+        triggering_event is not None
+        and triggering_event["origin"] == "file"
+        and triggering_event["event"] == "privilege_escalation"
+        and ip == "127.0.0.1"
+    )
+    # Loopback is a placeholder for local file events, not a shared actor.
+    # Grouping all loopback events into one report invents a relationship.
+    evidence_scope = "triggering_local_event" if local_file_event else "recent_ip_events"
+    evidence = (
+        [triggering_event]
+        if local_file_event
+        else repos.recent_events_for_ip(ctx.conn, ip, limit=20)
+        if ip
+        else []
+    )
     event_ids = [e["id"] for e in evidence]
     heights = repos.ledger_heights_for_events(ctx.conn, event_ids) if event_ids else []
 
@@ -179,11 +195,13 @@ def incident_report(ctx: Context) -> Outcome:
         "event": alert.get("event"),
         "severity": alert.get("severity"),
         "ip": ip,
+        "source": alert.get("source"),
         "user": alert.get("user"),
         "anomaly_score": alert.get("anomaly_score"),
         "explanation": alert.get("explanation"),
         "ruleset_version": alert.get("ruleset_version"),
         "evidence_event_ids": event_ids,
+        "evidence_scope": evidence_scope,
         "covering_ledger_blocks": heights,
         "verify_with": "python -m watchtower ledger verify",
     }
@@ -203,13 +221,24 @@ def incident_report(ctx: Context) -> Outcome:
 
 
 def _incident_markdown(r: dict, evidence: list) -> str:
+    local_file_event = r["evidence_scope"] == "triggering_local_event"
+    address_line = (
+        f"**Local host:** {r['source']} · **User:** {r['user']}  "
+        if local_file_event
+        else f"**Address:** `{r['ip']}` · **User:** {r['user']}  "
+    )
+    evidence_line = (
+        f"{len(r['evidence_event_ids'])} triggering event from this local host, covered by ledger "
+        if local_file_event
+        else f"{len(r['evidence_event_ids'])} events from this address, covered by ledger "
+    )
     lines = [
         f"# {r['id']}",
         "",
         f"**Opened:** {r['opened_at']}  ",
         f"**Event:** {r['event']} · **Severity:** {r['severity']} · "
         f"**Score:** {r['anomaly_score']}  ",
-        f"**Address:** `{r['ip']}` · **User:** {r['user']}  ",
+        address_line,
         f"**Ruleset:** `{r['ruleset_version']}`",
         "",
         "## Why this fired",
@@ -218,8 +247,7 @@ def _incident_markdown(r: dict, evidence: list) -> str:
         "",
         "## Evidence",
         "",
-        f"{len(r['evidence_event_ids'])} events from this address, covered by ledger "
-        f"blocks {_range_text(r['covering_ledger_blocks'])}.",
+        f"{evidence_line}blocks {_range_text(r['covering_ledger_blocks'])}.",
         "",
         "| Event | Time | Type | Severity | Message |",
         "|---:|---|---|---|---|",

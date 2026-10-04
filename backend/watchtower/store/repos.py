@@ -876,6 +876,16 @@ def recent_events_for_ip(conn, ip: str, limit: int = 20) -> list[dict]:
     ]
 
 
+def event_for_alert(conn, alert_id: int) -> dict | None:
+    """Return the specific stored event that raised an alert, if retained."""
+    row = conn.execute(
+        "SELECT events.* FROM alerts JOIN events ON events.id = alerts.event_id "
+        "WHERE alerts.id = ?",
+        (alert_id,),
+    ).fetchone()
+    return _event_row_to_dict(row) if row is not None else None
+
+
 def ledger_heights_for_events(conn, event_ids: list[int]) -> list[int]:
     """Which ledger blocks cover these events. Empty if retention removed them."""
     if not event_ids:
