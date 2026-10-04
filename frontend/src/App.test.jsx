@@ -210,6 +210,20 @@ describe('App', () => {
     )
   })
 
+  it('qualifies unanchored ledger verification in the panel and toast', async () => {
+    happyBackend()
+    render(<App />)
+    await settle(100)
+    await waitFor(() => expect(screen.getByText('LIVE')).toBeInTheDocument())
+
+    api.verifyChain.mockResolvedValue({ ok: true, blocks_checked: 2, pruned_events: 0 })
+    fireEvent.click(screen.getByRole('button', { name: /Verify Chain/ }))
+    await settle(100)
+
+    expect(screen.getAllByText(/2 present blocks verified/i)).toHaveLength(2)
+    expect(screen.getAllByText(/external checkpoint/i).length).toBeGreaterThanOrEqual(2)
+  })
+
   it('shows the backend’s own row counts after a reset, not a fixed message', async () => {
     happyBackend()
     vi.spyOn(globalThis, 'confirm').mockReturnValue(true)

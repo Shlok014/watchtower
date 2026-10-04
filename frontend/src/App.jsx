@@ -156,7 +156,7 @@ export default function App() {
       setChainResult(res)
       showToast(
         res.ok
-          ? `✅ Chain verified — ${res.blocks_checked} blocks, all digests recomputed`
+          ? `✅ ${res.blocks_checked} present blocks verified; no external checkpoint, so truncation is unproven`
           : `❌ Tamper detected at height ${res.first_bad_height} — ${res.findings?.[0]?.reason}`,
         res.ok ? 'success' : 'danger'
       )

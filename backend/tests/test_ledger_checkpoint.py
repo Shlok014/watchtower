@@ -62,6 +62,11 @@ def test_checkpoint_detects_truncation_and_refuses_overwrite(tmp_path, capsys):
     assert checkpoint.read_bytes() == original
     with db.write() as conn:
         conn.execute("DELETE FROM ledger WHERE block_id = 3")
+    # A local hash chain has no way to infer that its final block disappeared.
+    assert _run(path, "verify") == 0
+    unanchored_output = capsys.readouterr().out.lower()
+    assert "present blocks" in unanchored_output
+    assert "external checkpoint" in unanchored_output
     assert _run(path, "verify", "--checkpoint", str(checkpoint)) == 1
     assert "checkpoint mismatch" in capsys.readouterr().out.lower()
 

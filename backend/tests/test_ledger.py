@@ -62,6 +62,7 @@ def test_clean_chain_verifies(chain):
     assert r.ok, [f.detail for f in r.findings]
     assert r.blocks_checked == 20
     assert r.findings == []
+    assert r.as_dict()["completeness_verified"] is False
 
 
 def test_heights_are_monotonic_past_any_cap(tmp_path):

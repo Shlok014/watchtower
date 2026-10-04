@@ -19,7 +19,8 @@ distinguishes *how* the chain is broken:
     payload_mismatch  the event was edited after it was recorded
     header_mismatch   the ledger row itself was edited
     chain_break       prev_hash does not point at the previous block
-    height_gap        a block was deleted outright
+    height_gap        an interior block was deleted; a missing final block
+                      requires an external checkpoint to detect
     pruned            the event is gone (retention), so only the stored
                       payload digest can be checked — reported, not an error
 
@@ -145,6 +146,9 @@ class VerifyResult:
         return {
             "check": "full_verification",
             "ok": self.ok,
+            # Hashes prove only the rows still present. A missing suffix has no
+            # successor link to expose it without an independently kept tip.
+            "completeness_verified": False,
             "blocks_checked": self.blocks_checked,
             "content_hashes_recomputed": True,
             "pruned_events": self.pruned,

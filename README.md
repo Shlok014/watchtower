@@ -89,7 +89,7 @@ than an accident:
 | Alerting | Threshold 0.45; each alert carries fired rules and evidence. A durable 60-second cooldown per IP and event type prevents repeated alerts and SOAR actions; an analyst unblock resets it. [Real-log alert burden](docs/METRICS.md#openssh-live-rule-replay) is measured separately from detection accuracy. | ✅ real |
 | Analyst review | Owner-only `new → investigating → closed` workflow, with reasoned reopening and an append-only decision history. Review state does not change a block or SOAR outcome. | ✅ real |
 | **SOAR** | **A closed loop.** YAML playbooks; `block_ip` writes to a blocklist the consumer checks *before* detection, so a blocked address really is suppressed and the drops are counted. Webhooks POST for real. Incident reports are real files citing the ledger blocks that cover their evidence. Alert status is earned: `contained` / `action_failed`, never assumed. | ✅ **real** — enforcement is at the ingestion layer, not a firewall |
-| **Audit ledger** | **Tamper-evident.** Every digest is recomputed from the live event row on verify, and the header digest covers height, timestamp, prev_hash and payload — so editing an event, rewriting a block, back-dating one, or deleting one is all detected and distinguished. | ✅ **real** |
+| **Audit ledger** | **Tamper-evident within its trust boundary.** Verification recomputes available event digests and block headers, detecting event edits, changed blocks, back-dating, and interior gaps. An external checkpoint is needed to detect a consistent rewrite or deletion of the final block. | ✅ **real** |
 | Telemetry | Measured: per-stage p50/p95 via `perf_counter`, real RSS, real CPU, real 60s-window throughput, real uptime | ✅ real, measured |
 | **Persistence** | **SQLite in WAL mode.** One transaction per event covers the row, its alert, shadow verdict, and ledger block. The SOAR response runs after that transaction commits. Survives restart. Events retained 24h unless an alert cites them; the ledger is append-only and exempt. | ✅ **real** |
 | **Dashboard** | React + Chart.js. **LIVE / STALE / OFFLINE** follows the last successful poll. Rule, shadow, SOAR, and analyst review states are labelled separately; owner controls are disabled in read-only mode. | ✅ **real** |
@@ -525,7 +525,8 @@ Try it:
 ```bash
 cd backend
 .venv/bin/python -m watchtower ledger verify
-# ✅ Chain verified — 26 blocks, every digest recomputed from the live event rows
+# ✅ 26 present blocks verified — all available digests match.
+#    No external checkpoint: deletion of a final block cannot be detected.
 
 .venv/bin/python -m watchtower ledger tamper --event-id 7 --field message --value "nothing happened here"
 #   event 7.message
@@ -546,11 +547,13 @@ would re-chain the block and detect nothing.
 
 Verification distinguishes five outcomes: `payload_mismatch` (the event was
 edited), `header_mismatch` (the ledger row was edited), `chain_break`,
-`height_gap` (a block was deleted), and `pruned` — an event removed by
+`height_gap` (an interior block was deleted), and `pruned` — an event removed by
 retention, which is reported rather than treated as tampering.
 
 The chain alone cannot detect an attacker who controls the entire database and
-recomputes every affected hash. To make that attack detectable, export a
+recomputes every affected hash. It also cannot detect a missing final block:
+there is no later link or height gap to expose it. To make those attacks
+detectable, export a
 checkpoint after a clean verification and preserve the resulting file outside
 the database owner's control (for example, in a separately administered vault):
 
