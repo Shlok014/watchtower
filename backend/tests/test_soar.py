@@ -277,6 +277,7 @@ def test_incident_report_writes_real_files_with_ledger_coverage(isolated_config)
 
     body = reports[0].read_text()
     assert "python -m watchtower ledger verify" in body
+    assert "external checkpoint" in body
     # And it says plainly what it did not do.
     assert "not a remediation" in body
 
@@ -373,6 +374,27 @@ def test_incident_reports_are_private_files(isolated_config):
     files = list(isolated_config.incidents_dir.glob("INC-*"))
     assert len(files) == 2
     assert {stat.S_IMODE(path.stat().st_mode) for path in files} == {0o600}
+
+
+def test_incident_markdown_keeps_untrusted_log_text_inside_its_fields(isolated_config):
+    raw = _raw(
+        message="failed login\n## Forged operator conclusion\nsession terminated | <script>bad()</script>"
+    )
+    raw["user"] = "root\n## Forged analyst"
+    raw["ip"] = "203.0.113.77` [fake](https://invalid.example)"
+    process_log(raw)
+
+    report = next(isolated_config.incidents_dir.glob("INC-*.md"))
+    body = report.read_text()
+    evidence_table = body.split("## Evidence\n", 1)[1].split("## Verifying this report", 1)[0]
+    assert "failed login" in evidence_table
+    assert "session terminated" in evidence_table
+    assert sum(line.startswith("|") for line in evidence_table.splitlines()) == 3
+    assert "203.0.113.77" in body
+    assert "\n## Forged" not in body
+    assert "<script>" not in body
+    address_line = next(line for line in body.splitlines() if line.startswith("**Address:**"))
+    assert address_line.count("`") == 2  # only the intended code-span delimiters
 
 
 # ─── playbooks as data ───────────────────────────────────────────────────────

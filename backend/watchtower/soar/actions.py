@@ -265,9 +265,9 @@ def _write_incident_files(directory: Path, record: dict, evidence: list) -> tupl
 def _incident_markdown(r: dict, evidence: list) -> str:
     local_file_event = r["evidence_scope"] == "triggering_local_event"
     address_line = (
-        f"**Local host:** {r['source']} · **User:** {r['user']}  "
+        f"**Local host:** {_markdown_text(r['source'])} · **User:** {_markdown_text(r['user'])}  "
         if local_file_event
-        else f"**Address:** `{r['ip']}` · **User:** {r['user']}  "
+        else f"**Address:** `{_markdown_text(r['ip'])}` · **User:** {_markdown_text(r['user'])}  "
     )
     evidence_line = (
         f"{len(r['evidence_event_ids'])} triggering event from this local host, covered by ledger "
@@ -277,15 +277,15 @@ def _incident_markdown(r: dict, evidence: list) -> str:
     lines = [
         f"# {r['id']}",
         "",
-        f"**Opened:** {r['opened_at']}  ",
-        f"**Event:** {r['event']} · **Severity:** {r['severity']} · "
-        f"**Score:** {r['anomaly_score']}  ",
+        f"**Opened:** {_markdown_text(r['opened_at'])}  ",
+        f"**Event:** {_markdown_text(r['event'])} · **Severity:** {_markdown_text(r['severity'])} · "
+        f"**Score:** {_markdown_text(r['anomaly_score'])}  ",
         address_line,
-        f"**Ruleset:** `{r['ruleset_version']}`",
+        f"**Ruleset:** `{_markdown_text(r['ruleset_version'])}`",
         "",
         "## Why this fired",
         "",
-        f"{r['explanation']}",
+        _markdown_text(r["explanation"]),
         "",
         "## Evidence",
         "",
@@ -295,18 +295,26 @@ def _incident_markdown(r: dict, evidence: list) -> str:
         "|---:|---|---|---|---|",
     ]
     for e in evidence[:20]:
-        msg = (e["message"] or "").replace("|", "\\|")[:90]
-        lines.append(f"| {e['id']} | {e['timestamp']} | {e['event']} | {e['severity']} | {msg} |")
+        msg = _markdown_text(e["message"] or "", limit=90)
+        lines.append(
+            f"| {e['id']} | {_markdown_text(e['timestamp'])} | {_markdown_text(e['event'])} "
+            f"| {_markdown_text(e['severity'])} | {msg} |"
+        )
     lines += [
         "",
         "## Verifying this report",
         "",
-        "The events above are chained into the tamper-evident audit ledger. Any",
-        "edit to one of them after the fact is detected:",
+        "The events above are linked in the local audit ledger. This checks the",
+        "blocks currently present and detects edits that break the chain:",
         "",
         "```bash",
         f"{r['verify_with']}",
         "```",
+        "",
+        "A consistent chain rewrite or deletion of the final block requires a",
+        "trusted external checkpoint kept outside this database. Verify with",
+        "`--checkpoint PATH` when one is available. This report alone does not",
+        "prove the history is complete.",
         "",
         "## What was and was not done",
         "",
@@ -317,6 +325,45 @@ def _incident_markdown(r: dict, evidence: list) -> str:
         "",
     ]
     return "\n".join(lines)
+
+
+def _markdown_text(value: object, *, limit: int | None = None) -> str:
+    """Render untrusted text as plain text inside Markdown and table cells."""
+    value = "" if value is None else str(value)
+    if limit is not None:
+        value = value[:limit]
+    leading_digits = len(value) - len(value.lstrip("0123456789"))
+    out = []
+    for index, char in enumerate(value):
+        if char == "\n":
+            out.append(r"\n")
+        elif char == "\r":
+            out.append(r"\r")
+        elif char == "\t":
+            out.append(r"\t")
+        elif not char.isprintable():
+            out.append(f"\\u{ord(char):04x}")
+        elif char == "&":
+            out.append("&amp;")
+        elif char == "<":
+            out.append("&lt;")
+        elif char == ">":
+            out.append("&gt;")
+        elif char == "`":
+            # Backslash escapes are ignored inside a Markdown code span.
+            out.append("&#96;")
+        elif char in r"\*_{}[]()#!|~" or (char in "+-" and index == 0):
+            out.append("\\" + char)
+        elif (
+            char == "."
+            and index == leading_digits
+            and leading_digits > 0
+            and (index + 1 == len(value) or value[index + 1].isspace())
+        ):
+            out.append(r"\.")
+        else:
+            out.append(char)
+    return "".join(out)
 
 
 def _range_text(heights: list) -> str:
