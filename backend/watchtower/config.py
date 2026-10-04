@@ -13,6 +13,7 @@ data that a running install has already written.
 """
 
 import dataclasses
+import ipaddress
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -61,6 +62,7 @@ class Config:
     port: int
     alert_threshold: float
     sources: tuple[str, ...]
+    trusted_syslog_peers: tuple[str, ...] = ()
     allow_local_writes: bool = False
     write_token: str | None = field(default=None, repr=False)
 
@@ -76,6 +78,15 @@ class Config:
     def __post_init__(self) -> None:
         if self.write_token is not None and len(self.write_token) < 32:
             raise ValueError("WATCHTOWER_WRITE_TOKEN must contain at least 32 characters")
+        for peer in self.trusted_syslog_peers:
+            try:
+                address = ipaddress.ip_address(peer)
+            except ValueError:
+                raise ValueError("WATCHTOWER_TRUSTED_SYSLOG_PEERS requires literal IPs") from None
+            if str(address) != peer or getattr(address, "ipv4_mapped", None):
+                raise ValueError("WATCHTOWER_TRUSTED_SYSLOG_PEERS requires canonical IPs")
+            if not address.is_loopback:
+                raise ValueError("WATCHTOWER_TRUSTED_SYSLOG_PEERS accepts loopback peers only")
         object.__setattr__(self, "feeds_dir", self.data_dir / "feeds")
         object.__setattr__(self, "datasets_dir", self.data_dir / "datasets")
         object.__setattr__(self, "drain_dir", self.data_dir / "drain")
@@ -111,6 +122,7 @@ def from_env() -> Config:
         port=_env_int("WATCHTOWER_PORT", 5001),
         alert_threshold=_env_float("WATCHTOWER_ALERT_THRESHOLD", 0.45),
         sources=_env_list("WATCHTOWER_SOURCES", ("synthetic",)),
+        trusted_syslog_peers=_env_list("WATCHTOWER_TRUSTED_SYSLOG_PEERS", ()),
         allow_local_writes=os.environ.get("WATCHTOWER_ALLOW_LOCAL_WRITES") == "1",
         write_token=os.environ.get("WATCHTOWER_WRITE_TOKEN") or None,
     )

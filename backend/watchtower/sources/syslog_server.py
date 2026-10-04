@@ -15,11 +15,9 @@ supported by the BSD ``logger`` macOS ships** — it exits with "illegal option
     printf '<34>Aug  4 21:00:10 fw sshd[99]: Failed password for root from 198.51.100.4\\n' \\
       | nc -u -w1 127.0.0.1 5514
 
-**The address is taken from the socket, not from the message.** RFC 3164's
-HOSTNAME field is whatever the sender chose to write, and a syslog forwarder
-rewrites it routinely. The peer address on the datagram is the one fact about
-the packet that the sender could not simply assert, so that is what the
-correlation windows key on.
+The UDP peer is stored separately. Only an explicitly configured loopback peer
+may forward a strictly parsed sshd actor into correlation. UDP alone cannot
+authenticate remote senders.
 
 Both RFC 3164 (BSD, the ``logger`` default) and RFC 5424 are parsed. A datagram
 that matches neither is still ingested, with its whole body as the message and
@@ -27,12 +25,15 @@ a ``log_format`` that says ``raw`` — dropping it would mean a misconfigured
 sender produces silence, which looks exactly like a working listener.
 """
 
+import ipaddress
 import re
 import socketserver
 import threading
 from datetime import UTC, datetime
 
+from .. import config
 from ..pipeline.normalize import SYSLOG_SEVERITY
+from . import sshd
 from .base import ThreadedSource
 
 DEFAULT_PORT = 5514
@@ -90,7 +91,22 @@ def _bsd_timestamp(month: str, day: str, hhmmss: str) -> str:
         return now.isoformat()
 
 
-def parse_syslog(payload: str, peer_ip: str) -> dict:
+def _attributed(
+    raw: dict, peer_ip: str, tag: str, body: str, trusted_peers: tuple[str, ...]
+) -> dict:
+    raw["transport_peer_ip"] = peer_ip
+    try:
+        local_peer = ipaddress.ip_address(peer_ip).is_loopback
+    except ValueError:
+        local_peer = False
+    if local_peer and peer_ip in trusted_peers:
+        auth = sshd.parse(tag, body)
+        if auth is not None:
+            raw["event"], raw["ip"], raw["user"] = auth
+    return raw
+
+
+def parse_syslog(payload: str, peer_ip: str, *, trusted_peers: tuple[str, ...] = ()) -> dict:
     """One datagram → a raw event. Never returns None; see the module docstring."""
     payload = payload.strip()
 
@@ -107,7 +123,7 @@ def parse_syslog(payload: str, peer_ip: str) -> dict:
         # reads it, and a half-parsed SD element is worse than an unparsed one.
         rest = g["rest"]
         app = g["app"] if g["app"] != "-" else facility
-        return {
+        raw = {
             "timestamp": ts,
             "source": g["host"] if g["host"] != "-" else peer_ip,
             "event": SYSLOG_SEVERITY[severity],
@@ -117,6 +133,9 @@ def parse_syslog(payload: str, peer_ip: str) -> dict:
             "log_format": "rfc5424",
             "origin": "syslog",
         }
+        # Only the NILVALUE structured-data form permits exact message parsing.
+        body = rest[2:] if rest.startswith("- ") else ""
+        return _attributed(raw, peer_ip, app, body, trusted_peers)
 
     m = RFC3164.match(payload)
     if m:
@@ -125,10 +144,13 @@ def parse_syslog(payload: str, peer_ip: str) -> dict:
         rest = g["rest"]
         tag_m = TAG.match(rest)
         message = rest
+        tag = ""
+        body = ""
         if tag_m:
             tag, pid, msg = tag_m.group("tag"), tag_m.group("pid"), tag_m.group("msg")
             message = f"{tag}[{pid}]: {msg}" if pid else f"{tag}: {msg}"
-        return {
+            body = msg
+        raw = {
             "timestamp": _bsd_timestamp(g["month"], g["day"], g["time"]),
             "source": g["host"],
             "event": SYSLOG_SEVERITY[severity],
@@ -138,6 +160,7 @@ def parse_syslog(payload: str, peer_ip: str) -> dict:
             "log_format": "rfc3164",
             "origin": "syslog",
         }
+        return _attributed(raw, peer_ip, tag, body, trusted_peers)
 
     # Neither RFC matched. Ingested anyway, honestly labelled.
     return {
@@ -145,6 +168,7 @@ def parse_syslog(payload: str, peer_ip: str) -> dict:
         "source": peer_ip,
         "event": "log_info",
         "ip": peer_ip,
+        "transport_peer_ip": peer_ip,
         "user": "unknown",
         "message": payload,
         "log_format": "raw",
@@ -161,7 +185,11 @@ class _Handler(socketserver.BaseRequestHandler):
             return
         if not payload.strip():
             return
-        raw = parse_syslog(payload, self.client_address[0])
+        raw = parse_syslog(
+            payload,
+            self.client_address[0],
+            trusted_peers=config.get().trusted_syslog_peers,
+        )
         self.server.watchtower_source.on_datagram(raw)
 
 

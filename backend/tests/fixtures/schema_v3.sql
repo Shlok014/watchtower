@@ -29,8 +29,6 @@ CREATE TABLE IF NOT EXISTS events (
     event_type      TEXT    NOT NULL,
     severity        TEXT    NOT NULL CHECK (severity IN ('low','medium','high','critical')),
     ip              TEXT    NOT NULL,
-    -- UDP socket peer; NULL for legacy events and other source types.
-    transport_peer_ip TEXT,
     user            TEXT    NOT NULL,
     message         TEXT    NOT NULL,
     log_format      TEXT    NOT NULL,
