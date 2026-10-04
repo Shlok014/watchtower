@@ -10,7 +10,7 @@ import time
 from datetime import UTC, datetime
 
 from .. import ledger, telemetry
-from ..detect import rules
+from ..detect import live_shadow, rules
 from ..soar import engine as soar
 from ..store import db as store_db
 from ..store import repos
@@ -187,15 +187,22 @@ def process_log(raw_log: dict) -> dict:
 
         if block:
             repos.record_block_hit(conn, normalized["ip"])
+            shadow_verdict = live_shadow.verdict(blocked=True)
         else:
             t0 = time.perf_counter()
             detection = rules.detect(conn, normalized, ingested_ts_ms)
             telemetry.record("detect", time.perf_counter() - t0)
 
+            # Pure, bounded scoring against the profile loaded at startup.
+            # This does no file IO or fitting and cannot trigger an alert.
+            shadow_verdict = live_shadow.verdict(detection["features"])
+
             if detection["is_anomaly"]:
                 t0 = time.perf_counter()
                 alert = create_alert(conn, normalized, detection, event_id)
                 telemetry.record("alert", time.perf_counter() - t0)
+
+        repos.insert_shadow_verdict(conn, event_id, shadow_verdict)
 
     # Committed. From here the event is safe whatever the response does.
     if alert is not None:

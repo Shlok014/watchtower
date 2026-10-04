@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import { ApiError } from '../api/client'
@@ -28,6 +28,7 @@ const ALERT = {
   explanation: '5 failed logins from 203.0.113.77 in 60s + High-risk event: brute force',
   features: { failed_attempts_count: 5, ip_reputation: 'tor_exit', request_frequency: 12, threshold: 0.45 },
   status: 'contained',
+  review_status: 'new',
   soar_response: {
     status: 'contained',
     execution_steps: [
@@ -174,6 +175,91 @@ describe('AlertsPanel', () => {
   it('has a real empty state', () => {
     render(<AlertsPanel alerts={[]} />)
     expect(screen.getByText(/nothing has crossed the threshold/)).toBeInTheDocument()
+  })
+
+  it('lets the owner investigate with a note and keeps SOAR status separate', async () => {
+    const onReview = vi.fn().mockResolvedValue({ review_status: 'investigating', history: [] })
+    const onHistory = vi.fn().mockResolvedValue({ review_status: 'new', history: [] })
+    render(<AlertsPanel alerts={[ALERT]} canWrite onReview={onReview} onHistory={onHistory} />)
+    fireEvent.click(screen.getByRole('button', { name: /review alert 1/i }))
+    await waitFor(() => expect(onHistory).toHaveBeenCalledWith(1))
+    expect(screen.getByText(/SOAR outcome: contained/i)).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText(/review note/i), { target: { value: 'Checked source logs' } })
+    fireEvent.click(screen.getByRole('button', { name: /start investigation/i }))
+    await waitFor(() => expect(onReview).toHaveBeenCalledWith(1, 'investigating', 'Checked source logs'))
+    expect(await screen.findByRole('button', { name: /close review/i })).toBeInTheDocument()
+    expect(screen.getByText('investigating', { selector: 'strong' })).toBeInTheDocument()
+  })
+
+  it('uses the loaded review state to select the next action', async () => {
+    const onHistory = vi.fn().mockResolvedValue({ review_status: 'closed', history: [] })
+    render(<AlertsPanel alerts={[ALERT]} canWrite onHistory={onHistory} onReview={vi.fn()} />)
+    fireEvent.click(screen.getByRole('button', { name: /review alert 1/i }))
+    expect(await screen.findByRole('button', { name: /reopen investigation/i })).toBeInTheDocument()
+    expect(screen.getByText('closed', { selector: 'strong' })).toBeInTheDocument()
+  })
+
+  it('refreshes the review when polling reports an external state change', async () => {
+    const onHistory = vi.fn()
+      .mockResolvedValueOnce({ review_status: 'new', history: [] })
+      .mockResolvedValueOnce({ review_status: 'closed', history: [] })
+    const props = { canWrite: true, onHistory, onReview: vi.fn() }
+    const { rerender } = render(<AlertsPanel alerts={[ALERT]} {...props} />)
+    fireEvent.click(screen.getByRole('button', { name: /review alert 1/i }))
+    expect(await screen.findByRole('button', { name: /start investigation/i })).toBeInTheDocument()
+    rerender(<AlertsPanel alerts={[{ ...ALERT, review_status: 'closed' }]} {...props} />)
+    expect(await screen.findByRole('button', { name: /reopen investigation/i })).toBeInTheDocument()
+    expect(onHistory).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not replace a newer save with an older history response', async () => {
+    let resolveHistory
+    const onHistory = vi.fn().mockImplementationOnce(() => Promise.resolve({ review_status: 'new', history: [] }))
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveHistory = resolve }))
+    const onReview = vi.fn().mockResolvedValue({ review_status: 'investigating', history: [] })
+    const props = { canWrite: true, onHistory, onReview }
+    const { rerender } = render(<AlertsPanel alerts={[ALERT]} {...props} />)
+    fireEvent.click(screen.getByRole('button', { name: /review alert 1/i }))
+    await screen.findByRole('button', { name: /start investigation/i })
+    rerender(<AlertsPanel alerts={[{ ...ALERT, review_status: 'closed' }]} {...props} />)
+    await waitFor(() => expect(onHistory).toHaveBeenCalledTimes(2))
+    resolveHistory({ review_status: 'closed', history: [] })
+    expect(await screen.findByRole('button', { name: /reopen investigation/i })).toBeInTheDocument()
+  })
+
+  it('reloads the current state after a conflicting transition', async () => {
+    const onHistory = vi.fn()
+      .mockResolvedValueOnce({ review_status: 'new', history: [] })
+      .mockResolvedValueOnce({ review_status: 'investigating', history: [] })
+    const onReview = vi.fn().mockRejectedValue(new ApiError('Conflict', { status: 409, detail: 'Review changed' }))
+    render(<AlertsPanel alerts={[ALERT]} canWrite onHistory={onHistory} onReview={onReview} />)
+    fireEvent.click(screen.getByRole('button', { name: /review alert 1/i }))
+    await screen.findByRole('button', { name: /start investigation/i })
+    fireEvent.change(screen.getByLabelText(/review note/i), { target: { value: 'Check evidence' } })
+    fireEvent.click(screen.getByRole('button', { name: /start investigation/i }))
+    expect(await screen.findByRole('button', { name: /close review/i })).toBeInTheDocument()
+    expect(screen.getByRole('alert')).toHaveTextContent('Review changed')
+  })
+
+  it('shows a failed load without claiming the review has no decisions', async () => {
+    const onHistory = vi.fn().mockRejectedValue(new Error('History unavailable'))
+    render(<AlertsPanel alerts={[ALERT]} canWrite onHistory={onHistory} onReview={vi.fn()} />)
+    fireEvent.click(screen.getByRole('button', { name: /review alert 1/i }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('History unavailable')
+    expect(screen.queryByText(/No analyst decisions recorded yet/)).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /start investigation/i })).toBeDisabled()
+  })
+
+  it('shows read-only history without edit controls', async () => {
+    const onHistory = vi.fn().mockResolvedValue({
+      review_status: 'closed',
+      history: [{ id: 1, from_status: 'investigating', to_status: 'closed', note: 'False positive', actor: 'owner', timestamp: '2026-10-04T00:00:00Z' }],
+    })
+    render(<AlertsPanel alerts={[ALERT]} canWrite={false} onHistory={onHistory} />)
+    fireEvent.click(screen.getByRole('button', { name: /review alert 1/i }))
+    expect(await screen.findByText('False positive')).toBeInTheDocument()
+    expect(screen.queryByLabelText(/review note/i)).not.toBeInTheDocument()
+    expect(screen.getByText(/read-only/i)).toBeInTheDocument()
   })
 })
 

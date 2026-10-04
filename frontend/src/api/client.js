@@ -125,6 +125,8 @@ export const api = {
   health: () => get('/system-health'),
   logs: (params) => get(`/logs?${new URLSearchParams(params)}`),
   alerts: (limit = 40) => get(`/alerts?limit=${limit}`),
+  reviewHistory: (id) => get(`/alerts/${id}/review`),
+  reviewAlert: (id, status, note) => post(`/alerts/${id}/review`, { status, note }),
   soarActions: (limit = 25) => get(`/soar-actions?limit=${limit}`),
   ledger: (limit = 20) => get(`/blockchain?limit=${limit}`),
   blocklist: () => get('/blocklist'),

@@ -1,5 +1,6 @@
 import { ScrollText } from 'lucide-react'
 import { Panel } from './Panel'
+import { ShadowVerdict } from './ShadowVerdict'
 
 export function LogsPanel({ logs, filters, setFilters, sources, dimmed, filtered }) {
   const set = (k) => (e) => setFilters((f) => ({ ...f, [k]: e.target.value }))
@@ -25,12 +26,12 @@ export function LogsPanel({ logs, filters, setFilters, sources, dimmed, filtered
           <thead>
             <tr>
               <th>Time</th><th>Origin</th><th>Source</th><th>Event</th>
-              <th>IP Address</th><th>Reputation</th><th>User</th><th>Severity</th>
+              <th>IP Address</th><th>Reputation</th><th>User</th><th>Severity</th><th>Shadow</th>
             </tr>
           </thead>
           <tbody>
             {logs.length === 0 ? (
-              <tr><td colSpan="8" style={{ textAlign: 'center', color: 'var(--text-dim)' }}>
+              <tr><td colSpan="9" style={{ textAlign: 'center', color: 'var(--text-dim)' }}>
                 {/* Three different situations, three different sentences. They
                     used to share one "Waiting for logs…" that also covered a
                     dead backend. */}
@@ -59,6 +60,7 @@ export function LogsPanel({ logs, filters, setFilters, sources, dimmed, filtered
                         title={log.reputation?.detail}>{log.reputation?.verdict?.replace(/_/g, ' ') || '—'}</span></td>
                 <td>{log.user}</td>
                 <td><span className={`severity ${log.severity}`}><span className="severity-dot"></span>{log.severity}</span></td>
+                <td><ShadowVerdict verdict={log.shadow_verdict} /></td>
               </tr>
             ))}
           </tbody>

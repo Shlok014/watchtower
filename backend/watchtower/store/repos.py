@@ -68,7 +68,7 @@ def counters() -> dict:
 
 
 # ── events ───────────────────────────────────────────────────────────────────
-def _event_row_to_dict(r) -> dict:
+def _event_row_to_dict(r, shadow_verdict=None) -> dict:
     return {
         "id": r["id"],
         "timestamp": to_iso(r["ts_ms"]),
@@ -84,6 +84,7 @@ def _event_row_to_dict(r) -> dict:
         "origin": r["origin"],
         # Suppressed by the blocklist before detection ran.
         "dropped": bool(r["dropped"]),
+        "shadow_verdict": shadow_verdict,
         # Re-nested: the frontend reads log.reputation?.verdict / .detail.
         "reputation": {
             "verdict": r["rep_verdict"],
@@ -132,6 +133,26 @@ def insert_event(conn, normalized: dict, ingested_ts_ms: int) -> int:
     return cur.lastrowid
 
 
+def insert_shadow_verdict(conn, event_id: int, verdict: dict) -> None:
+    """Persist the single shadow outcome beside the event in its transaction."""
+    conn.execute(
+        """INSERT INTO event_shadow_verdicts
+           (event_id, status, profile_digest, verdict_json) VALUES (?, ?, ?, ?)""",
+        (event_id, verdict["status"], verdict.get("profile_digest"), json.dumps(verdict)),
+    )
+
+
+def _shadow_verdicts(conn, event_ids: list[int]) -> dict[int, dict]:
+    if not event_ids:
+        return {}
+    marks = ",".join("?" * len(event_ids))
+    rows = conn.execute(
+        f"SELECT event_id, verdict_json FROM event_shadow_verdicts WHERE event_id IN ({marks})",
+        event_ids,
+    )
+    return {row["event_id"]: json.loads(row["verdict_json"]) for row in rows}
+
+
 def recent_events(limit=100, severity=None, source=None, search=None) -> list[dict]:
     sql = "SELECT * FROM events"
     where, params = [], []
@@ -151,7 +172,10 @@ def recent_events(limit=100, severity=None, source=None, search=None) -> list[di
         sql += " WHERE " + " AND ".join(where)
     sql += " ORDER BY id DESC LIMIT ?"
     params.append(limit)
-    return [_event_row_to_dict(r) for r in db.connect().execute(sql, params)]
+    conn = db.connect()
+    rows = conn.execute(sql, params).fetchall()
+    verdicts = _shadow_verdicts(conn, [r["id"] for r in rows])
+    return [_event_row_to_dict(r, verdicts.get(r["id"])) for r in rows]
 
 
 # ── detection windows ────────────────────────────────────────────────────────
@@ -177,9 +201,10 @@ def events_in_window(conn, ip: str, since_ms: int) -> int:
 
 
 # ── alerts ───────────────────────────────────────────────────────────────────
-def _alert_row_to_dict(r, soar=None) -> dict:
+def _alert_row_to_dict(r, soar=None, shadow_verdict=None) -> dict:
     return {
         "id": r["id"],
+        "event_id": r["event_id"],
         "timestamp": to_iso(r["ts_ms"]),
         "event": r["event"],
         "source": r["source"],
@@ -193,6 +218,8 @@ def _alert_row_to_dict(r, soar=None) -> dict:
         "reasons": json.loads(r["reasons_json"]),
         "reputation": json.loads(r["reputation_json"]),
         "status": r["status"],
+        "review_status": r["review_status"],
+        "shadow_verdict": shadow_verdict,
         "soar_response": soar,
     }
 
@@ -245,7 +272,89 @@ def recent_alerts(limit=50) -> list[dict]:
         s["alert_id"]: s
         for s in _soar_rows(conn, f"SELECT * FROM soar_executions WHERE alert_id IN ({marks})", ids)
     }
-    return [_alert_row_to_dict(r, soar_by_alert.get(r["id"])) for r in rows]
+    verdicts = _shadow_verdicts(conn, [r["event_id"] for r in rows if r["event_id"] is not None])
+    return [
+        _alert_row_to_dict(r, soar_by_alert.get(r["id"]), verdicts.get(r["event_id"])) for r in rows
+    ]
+
+
+REVIEW_TRANSITIONS = {
+    "new": frozenset({"investigating"}),
+    "investigating": frozenset({"closed"}),
+    "closed": frozenset({"investigating"}),
+}
+
+
+class ReviewConflict(Exception):
+    """The requested transition is not valid from the current state."""
+
+
+def alert_review_status(alert_id: int) -> str | None:
+    row = (
+        db.connect()
+        .execute("SELECT review_status FROM alerts WHERE id = ?", (alert_id,))
+        .fetchone()
+    )
+    return row["review_status"] if row else None
+
+
+def alert_review_history(alert_id: int, conn=None, limit: int = 100) -> list[dict]:
+    rows = (
+        (conn or db.connect())
+        .execute(
+            "SELECT * FROM alert_review_events WHERE alert_id = ? ORDER BY id DESC LIMIT ?",
+            (alert_id, limit),
+        )
+        .fetchall()
+    )
+    return [
+        {
+            "id": row["id"],
+            "timestamp": to_iso(row["ts_ms"]),
+            "from_status": row["from_status"],
+            "to_status": row["to_status"],
+            "note": row["note"],
+            "actor": row["actor"],
+        }
+        for row in reversed(rows)
+    ]
+
+
+def alert_review_snapshot(alert_id: int) -> dict | None:
+    """Read state and history from one snapshot during concurrent transitions."""
+    conn = db.connect()
+    conn.execute("BEGIN")
+    try:
+        row = conn.execute("SELECT review_status FROM alerts WHERE id = ?", (alert_id,)).fetchone()
+        result = (
+            {"review_status": row["review_status"], "history": alert_review_history(alert_id, conn)}
+            if row
+            else None
+        )
+        conn.execute("COMMIT")
+        return result
+    except BaseException:
+        if conn.in_transaction:
+            conn.execute("ROLLBACK")
+        raise
+
+
+def transition_alert_review(conn, alert_id: int, target: str, note: str) -> str:
+    """Transition under the caller's write lock; preserve SOAR status untouched."""
+    row = conn.execute("SELECT review_status FROM alerts WHERE id = ?", (alert_id,)).fetchone()
+    if row is None:
+        raise LookupError("alert not found")
+    current = row["review_status"]
+    if target not in REVIEW_TRANSITIONS[current]:
+        raise ReviewConflict(f"cannot move review from {current} to {target}")
+    conn.execute("UPDATE alerts SET review_status = ? WHERE id = ?", (target, alert_id))
+    conn.execute(
+        """INSERT INTO alert_review_events
+           (alert_id, ts_ms, from_status, to_status, note, actor)
+           VALUES (?, ?, ?, ?, ?, 'owner')""",
+        (alert_id, now_ms(), current, target, note),
+    )
+    return target
 
 
 # ── SOAR ─────────────────────────────────────────────────────────────────────
@@ -578,7 +687,16 @@ def reset_all(conn) -> dict:
     remove.
     """
     deleted = {}
-    for table in ("soar_steps", "soar_executions", "alerts", "events", "ledger", "blocklist"):
+    for table in (
+        "soar_steps",
+        "soar_executions",
+        "alert_review_events",
+        "event_shadow_verdicts",
+        "alerts",
+        "events",
+        "ledger",
+        "blocklist",
+    ):
         deleted[table] = conn.execute(f"DELETE FROM {table}").rowcount
     conn.execute("UPDATE counters SET value = 0")
     # Reclaim the freed pages; auto_vacuum=INCREMENTAL only frees on request.

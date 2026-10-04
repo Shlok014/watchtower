@@ -10,7 +10,7 @@ only discover it by rendering an empty cell.
 from flask import Blueprint, abort, jsonify, request
 
 from .. import access, config, ledger, runtime, telemetry, threatintel
-from ..detect import model, rules, stream, train
+from ..detect import live_shadow, model, rules, stream, train
 from ..pipeline.consumer import process_log
 from ..soar import actions as soar_actions
 from ..soar import engine as soar_engine
@@ -55,6 +55,43 @@ def get_logs():
 @bp.route("/alerts", methods=["GET"])
 def get_alerts():
     return jsonify(repos.recent_alerts(query_int("limit", 50, 1, 500)))
+
+
+@bp.route("/live-shadow/status", methods=["GET"])
+def live_shadow_status():
+    return jsonify(live_shadow.status())
+
+
+@bp.route("/alerts/<int:alert_id>/review", methods=["GET", "POST"])
+def alert_review(alert_id: int):
+    """Owner audit workflow; independent of automatic response status."""
+    if request.method == "GET":
+        snapshot = repos.alert_review_snapshot(alert_id)
+        if snapshot is None:
+            return jsonify({"error": "alert_not_found"}), 404
+        return jsonify(snapshot)
+
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return jsonify({"error": "invalid_review", "detail": "JSON object required"}), 400
+    target, note = payload.get("status"), payload.get("note")
+    if (
+        not isinstance(target, str)
+        or target not in {"new", "investigating", "closed"}
+        or not isinstance(note, str)
+    ):
+        return jsonify({"error": "invalid_review", "detail": "status and note required"}), 400
+    note = note.strip()
+    if not note or len(note) > 500:
+        return jsonify({"error": "invalid_review", "detail": "note must be 1-500 characters"}), 400
+    try:
+        with store_db.write() as conn:
+            repos.transition_alert_review(conn, alert_id, target, note)
+    except LookupError:
+        return jsonify({"error": "alert_not_found"}), 404
+    except repos.ReviewConflict as exc:
+        return jsonify({"error": "review_conflict", "detail": str(exc)}), 409
+    return jsonify(repos.alert_review_snapshot(alert_id))
 
 
 @bp.route("/stats", methods=["GET"])

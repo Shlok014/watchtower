@@ -2,10 +2,10 @@
 """Fail the build if fabricated values, or retired overclaiming names, come back.
 
 The project's whole premise is that it does not invent numbers. Randomness is
-legitimate in exactly one place — the synthetic log generator, which produces
-*input data* and labels every event ``origin: synthetic``. Anywhere else it
-would be faking a measurement of the system's own behaviour, which is what the
-rebuild removed.
+legitimate when producing explicitly labelled synthetic *input data*: the
+demo source, threat-feed sampling for demo addresses, and seeded evaluation
+scenario generators. It must never perturb measured detector scores or
+reported outcomes.
 
 This is a script rather than a shell one-liner in the CI file because both
 halves of the original one-liner were wrong in ways only a real run would show:
@@ -40,10 +40,12 @@ import sys
 import tokenize
 from pathlib import Path
 
-# Files permitted to call random.*, and why.
+# Files permitted to call random.* for input generation, and why.
 RANDOM_ALLOWED = {
     "backend/watchtower/sources/synthetic.py": "the synthetic generator — it produces input data",
     "backend/watchtower/threatintel/pool.py": "samples the real cached feed for demo addresses",
+    "backend/eval/live.py": "seeded, labelled synthetic feature scenarios only",
+    "backend/eval/live_pipeline.py": "seeded, labelled synthetic raw-event scenarios only",
 }
 
 RANDOM_CALL = re.compile(r"\brandom\s*\.\s*[A-Za-z_]+\s*\(")
@@ -154,7 +156,7 @@ def check(root: Path) -> list[str]:
                 for n, line in enumerate(code.splitlines(), 1):
                     if RANDOM_CALL.search(line):
                         findings.append(
-                            f"{rel}:{n}: random.* called outside the synthetic generator "
+                            f"{rel}:{n}: random.* called outside an approved synthetic input generator "
                             f"— {line.strip()}"
                         )
         elif path.suffix in CODE_SUFFIXES:

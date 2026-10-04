@@ -1,0 +1,1562 @@
+{
+  "feature_proxy": {
+    "limits": [
+      "Synthetic rule-feature-shaped windows only; no real incident labels or measured production false alarms.",
+      "The harness bypasses live normalization, ingestion, threat-feed lookup, and rule-window queries.",
+      "Validation and test groups are disjoint from training but share one generator.",
+      "The threshold is fixed before validation/test and is not calibrated probability.",
+      "Single-event attacks without window deviation are expected misses.",
+      "This profile is shadow-only; rule detection remains the only alert trigger."
+    ],
+    "profile": {
+      "digest": "19f54274ab4f9f27f7d71d0383b5ecefe5ab16813565f5cc459bc8e0902ece5c",
+      "normal_windows": 96,
+      "source_hash": "88640075176be6da6e44c0ae09105a8bfe3e1d0019d20f586b54305887c263a9",
+      "threshold": 1.0,
+      "version": 1
+    },
+    "protocol": "normal_only_disjoint_synthetic_groups_v1",
+    "seed": 41,
+    "split": {
+      "groups": {
+        "test": [
+          "test-source-00-synthetic-ip-017",
+          "test-source-01-synthetic-ip-018",
+          "test-source-02-synthetic-ip-019",
+          "test-source-03-synthetic-ip-020",
+          "test-source-04-synthetic-ip-021",
+          "test-source-05-synthetic-ip-022",
+          "test-source-06-synthetic-ip-023",
+          "test-source-07-synthetic-ip-024"
+        ],
+        "train": [
+          "train-source-00-synthetic-ip-001",
+          "train-source-01-synthetic-ip-002",
+          "train-source-02-synthetic-ip-003",
+          "train-source-03-synthetic-ip-004",
+          "train-source-04-synthetic-ip-005",
+          "train-source-05-synthetic-ip-006",
+          "train-source-06-synthetic-ip-007",
+          "train-source-07-synthetic-ip-008",
+          "train-source-08-synthetic-ip-009",
+          "train-source-09-synthetic-ip-010",
+          "train-source-10-synthetic-ip-011",
+          "train-source-11-synthetic-ip-012"
+        ],
+        "validation": [
+          "validation-source-00-synthetic-ip-013",
+          "validation-source-01-synthetic-ip-014",
+          "validation-source-02-synthetic-ip-015",
+          "validation-source-03-synthetic-ip-016"
+        ]
+      },
+      "test_windows": 96,
+      "train_windows": 96,
+      "validation_windows": 48
+    },
+    "test": {
+      "confusion": {
+        "fn": 8,
+        "fp": 0,
+        "tn": 64,
+        "tp": 24
+      },
+      "false_positive_rate": 0.0,
+      "misses": [
+        {
+          "group": "test-source-00-synthetic-ip-017",
+          "scenario": "subtle_single_event"
+        },
+        {
+          "group": "test-source-01-synthetic-ip-018",
+          "scenario": "subtle_single_event"
+        },
+        {
+          "group": "test-source-02-synthetic-ip-019",
+          "scenario": "subtle_single_event"
+        },
+        {
+          "group": "test-source-03-synthetic-ip-020",
+          "scenario": "subtle_single_event"
+        },
+        {
+          "group": "test-source-04-synthetic-ip-021",
+          "scenario": "subtle_single_event"
+        },
+        {
+          "group": "test-source-05-synthetic-ip-022",
+          "scenario": "subtle_single_event"
+        },
+        {
+          "group": "test-source-06-synthetic-ip-023",
+          "scenario": "subtle_single_event"
+        },
+        {
+          "group": "test-source-07-synthetic-ip-024",
+          "scenario": "subtle_single_event"
+        }
+      ],
+      "precision": 1.0,
+      "recall": 0.75,
+      "windows": 96
+    },
+    "validation": {
+      "confusion": {
+        "fn": 4,
+        "fp": 0,
+        "tn": 32,
+        "tp": 12
+      },
+      "false_positive_rate": 0.0,
+      "misses": [
+        {
+          "group": "validation-source-00-synthetic-ip-013",
+          "scenario": "subtle_single_event"
+        },
+        {
+          "group": "validation-source-01-synthetic-ip-014",
+          "scenario": "subtle_single_event"
+        },
+        {
+          "group": "validation-source-02-synthetic-ip-015",
+          "scenario": "subtle_single_event"
+        },
+        {
+          "group": "validation-source-03-synthetic-ip-016",
+          "scenario": "subtle_single_event"
+        }
+      ],
+      "precision": 1.0,
+      "recall": 0.75,
+      "windows": 48
+    }
+  },
+  "raw_event_replay": {
+    "limits": [
+      "Scenario-assigned labels are not incident ground truth or production false-alarm measurements.",
+      "The baseline is feature-shaped synthetic data, not raw training traffic.",
+      "Validation and test replay use disjoint sources and IPs but share one generator.",
+      "SOAR actions are disabled; this measures alert creation, not containment.",
+      "Shadow verdicts never create alerts; rule and shadow confusion matrices are separate."
+    ],
+    "profile": {
+      "digest": "19f54274ab4f9f27f7d71d0383b5ecefe5ab16813565f5cc459bc8e0902ece5c",
+      "normal_windows": 96,
+      "source_hash": "88640075176be6da6e44c0ae09105a8bfe3e1d0019d20f586b54305887c263a9",
+      "threshold": 1.0
+    },
+    "protocol": "synthetic_raw_event_pipeline_replay_v1",
+    "provenance": {
+      "baseline": "normal-only synthetic rule-feature windows from eval.live",
+      "ground_truth": "scenario_assigned",
+      "ip_reputation": "RFC5737 non-routable documentation IPs; no threat-feed evidence",
+      "production_validity": false,
+      "replay": "normalize_log and process_log with temporary SQLite",
+      "response_actions": "disabled_for_replay",
+      "source": "generated_raw_events"
+    },
+    "seed": 41,
+    "split": {
+      "test": {
+        "ip_groups": [
+          "203.0.113.1",
+          "203.0.113.17",
+          "203.0.113.18",
+          "203.0.113.19",
+          "203.0.113.2",
+          "203.0.113.20",
+          "203.0.113.21",
+          "203.0.113.3",
+          "203.0.113.33",
+          "203.0.113.34",
+          "203.0.113.35",
+          "203.0.113.36",
+          "203.0.113.37",
+          "203.0.113.4",
+          "203.0.113.5"
+        ],
+        "source_groups": [
+          "test-pipeline-source-00",
+          "test-pipeline-source-01",
+          "test-pipeline-source-02"
+        ]
+      },
+      "train": {
+        "ip_groups": [
+          "synthetic-ip-001",
+          "synthetic-ip-002",
+          "synthetic-ip-003",
+          "synthetic-ip-004",
+          "synthetic-ip-005",
+          "synthetic-ip-006",
+          "synthetic-ip-007",
+          "synthetic-ip-008",
+          "synthetic-ip-009",
+          "synthetic-ip-010",
+          "synthetic-ip-011",
+          "synthetic-ip-012"
+        ],
+        "source_groups": [
+          "train-source-00",
+          "train-source-01",
+          "train-source-02",
+          "train-source-03",
+          "train-source-04",
+          "train-source-05",
+          "train-source-06",
+          "train-source-07",
+          "train-source-08",
+          "train-source-09",
+          "train-source-10",
+          "train-source-11"
+        ]
+      },
+      "train_windows": 96,
+      "validation": {
+        "ip_groups": [
+          "198.51.100.1",
+          "198.51.100.17",
+          "198.51.100.18",
+          "198.51.100.19",
+          "198.51.100.2",
+          "198.51.100.20",
+          "198.51.100.21",
+          "198.51.100.3",
+          "198.51.100.4",
+          "198.51.100.5"
+        ],
+        "source_groups": [
+          "validation-pipeline-source-00",
+          "validation-pipeline-source-01"
+        ]
+      }
+    },
+    "test": {
+      "attack_events": 36,
+      "benign_events": 35,
+      "events": 71,
+      "rules": {
+        "confusion": {
+          "fn": 30,
+          "fp": 0,
+          "tn": 35,
+          "tp": 6
+        },
+        "false_positive_rate": 0.0,
+        "misses": [
+          {
+            "event_id": 60,
+            "ip_group": "203.0.113.3",
+            "scenario": "low_and_slow",
+            "source_group": "test-pipeline-source-00"
+          },
+          {
+            "event_id": 61,
+            "ip_group": "203.0.113.3",
+            "scenario": "low_and_slow",
+            "source_group": "test-pipeline-source-00"
+          },
+          {
+            "event_id": 63,
+            "ip_group": "203.0.113.5",
+            "scenario": "fast_failed_logins",
+            "source_group": "test-pipeline-source-00"
+          },
+          {
+            "event_id": 64,
+            "ip_group": "203.0.113.5",
+            "scenario": "fast_failed_logins",
+            "source_group": "test-pipeline-source-00"
+          },
+          {
+            "event_id": 65,
+            "ip_group": "203.0.113.5",
+            "scenario": "fast_failed_logins",
+            "source_group": "test-pipeline-source-00"
+          },
+          {
+            "event_id": 66,
+            "ip_group": "203.0.113.5",
+            "scenario": "fast_failed_logins",
+            "source_group": "test-pipeline-source-00"
+          },
+          {
+            "event_id": 67,
+            "ip_group": "203.0.113.5",
+            "scenario": "fast_failed_logins",
+            "source_group": "test-pipeline-source-00"
+          },
+          {
+            "event_id": 68,
+            "ip_group": "203.0.113.5",
+            "scenario": "fast_failed_logins",
+            "source_group": "test-pipeline-source-00"
+          },
+          {
+            "event_id": 69,
+            "ip_group": "203.0.113.5",
+            "scenario": "fast_failed_logins",
+            "source_group": "test-pipeline-source-00"
+          },
+          {
+            "event_id": 70,
+            "ip_group": "203.0.113.5",
+            "scenario": "fast_failed_logins",
+            "source_group": "test-pipeline-source-00"
+          },
+          {
+            "event_id": 83,
+            "ip_group": "203.0.113.19",
+            "scenario": "low_and_slow",
+            "source_group": "test-pipeline-source-01"
+          },
+          {
+            "event_id": 84,
+            "ip_group": "203.0.113.19",
+            "scenario": "low_and_slow",
+            "source_group": "test-pipeline-source-01"
+          },
+          {
+            "event_id": 86,
+            "ip_group": "203.0.113.21",
+            "scenario": "fast_failed_logins",
+            "source_group": "test-pipeline-source-01"
+          },
+          {
+            "event_id": 87,
+            "ip_group": "203.0.113.21",
+            "scenario": "fast_failed_logins",
+            "source_group": "test-pipeline-source-01"
+          },
+          {
+            "event_id": 88,
+            "ip_group": "203.0.113.21",
+            "scenario": "fast_failed_logins",
+            "source_group": "test-pipeline-source-01"
+          },
+          {
+            "event_id": 89,
+            "ip_group": "203.0.113.21",
+            "scenario": "fast_failed_logins",
+            "source_group": "test-pipeline-source-01"
+          },
+          {
+            "event_id": 90,
+            "ip_group": "203.0.113.21",
+            "scenario": "fast_failed_logins",
+            "source_group": "test-pipeline-source-01"
+          },
+          {
+            "event_id": 91,
+            "ip_group": "203.0.113.21",
+            "scenario": "fast_failed_logins",
+            "source_group": "test-pipeline-source-01"
+          },
+          {
+            "event_id": 92,
+            "ip_group": "203.0.113.21",
+            "scenario": "fast_failed_logins",
+            "source_group": "test-pipeline-source-01"
+          },
+          {
+            "event_id": 93,
+            "ip_group": "203.0.113.21",
+            "scenario": "fast_failed_logins",
+            "source_group": "test-pipeline-source-01"
+          },
+          {
+            "event_id": 107,
+            "ip_group": "203.0.113.35",
+            "scenario": "low_and_slow",
+            "source_group": "test-pipeline-source-02"
+          },
+          {
+            "event_id": 108,
+            "ip_group": "203.0.113.35",
+            "scenario": "low_and_slow",
+            "source_group": "test-pipeline-source-02"
+          },
+          {
+            "event_id": 110,
+            "ip_group": "203.0.113.37",
+            "scenario": "fast_failed_logins",
+            "source_group": "test-pipeline-source-02"
+          },
+          {
+            "event_id": 111,
+            "ip_group": "203.0.113.37",
+            "scenario": "fast_failed_logins",
+            "source_group": "test-pipeline-source-02"
+          },
+          {
+            "event_id": 112,
+            "ip_group": "203.0.113.37",
+            "scenario": "fast_failed_logins",
+            "source_group": "test-pipeline-source-02"
+          },
+          {
+            "event_id": 113,
+            "ip_group": "203.0.113.37",
+            "scenario": "fast_failed_logins",
+            "source_group": "test-pipeline-source-02"
+          },
+          {
+            "event_id": 114,
+            "ip_group": "203.0.113.37",
+            "scenario": "fast_failed_logins",
+            "source_group": "test-pipeline-source-02"
+          },
+          {
+            "event_id": 115,
+            "ip_group": "203.0.113.37",
+            "scenario": "fast_failed_logins",
+            "source_group": "test-pipeline-source-02"
+          },
+          {
+            "event_id": 116,
+            "ip_group": "203.0.113.37",
+            "scenario": "fast_failed_logins",
+            "source_group": "test-pipeline-source-02"
+          },
+          {
+            "event_id": 117,
+            "ip_group": "203.0.113.37",
+            "scenario": "fast_failed_logins",
+            "source_group": "test-pipeline-source-02"
+          }
+        ],
+        "precision": 1.0,
+        "recall": 0.16666666666666666
+      },
+      "scenarios": {
+        "benign_burst": {
+          "attack_events": 0,
+          "benign_events": 29,
+          "events": 29,
+          "rules": {
+            "confusion": {
+              "fn": 0,
+              "fp": 0,
+              "tn": 29,
+              "tp": 0
+            },
+            "false_positive_rate": 0.0,
+            "misses": [],
+            "precision": null,
+            "recall": null
+          },
+          "shadow": {
+            "confusion": {
+              "fn": 0,
+              "fp": 8,
+              "tn": 21,
+              "tp": 0
+            },
+            "false_positive_rate": 0.27586206896551724,
+            "misses": [],
+            "precision": 0.0,
+            "recall": null
+          }
+        },
+        "fast_failed_logins": {
+          "attack_events": 27,
+          "benign_events": 0,
+          "events": 27,
+          "rules": {
+            "confusion": {
+              "fn": 24,
+              "fp": 0,
+              "tn": 0,
+              "tp": 3
+            },
+            "false_positive_rate": null,
+            "misses": [
+              {
+                "event_id": 63,
+                "ip_group": "203.0.113.5",
+                "scenario": "fast_failed_logins",
+                "source_group": "test-pipeline-source-00"
+              },
+              {
+                "event_id": 64,
+                "ip_group": "203.0.113.5",
+                "scenario": "fast_failed_logins",
+                "source_group": "test-pipeline-source-00"
+              },
+              {
+                "event_id": 65,
+                "ip_group": "203.0.113.5",
+                "scenario": "fast_failed_logins",
+                "source_group": "test-pipeline-source-00"
+              },
+              {
+                "event_id": 66,
+                "ip_group": "203.0.113.5",
+                "scenario": "fast_failed_logins",
+                "source_group": "test-pipeline-source-00"
+              },
+              {
+                "event_id": 67,
+                "ip_group": "203.0.113.5",
+                "scenario": "fast_failed_logins",
+                "source_group": "test-pipeline-source-00"
+              },
+              {
+                "event_id": 68,
+                "ip_group": "203.0.113.5",
+                "scenario": "fast_failed_logins",
+                "source_group": "test-pipeline-source-00"
+              },
+              {
+                "event_id": 69,
+                "ip_group": "203.0.113.5",
+                "scenario": "fast_failed_logins",
+                "source_group": "test-pipeline-source-00"
+              },
+              {
+                "event_id": 70,
+                "ip_group": "203.0.113.5",
+                "scenario": "fast_failed_logins",
+                "source_group": "test-pipeline-source-00"
+              },
+              {
+                "event_id": 86,
+                "ip_group": "203.0.113.21",
+                "scenario": "fast_failed_logins",
+                "source_group": "test-pipeline-source-01"
+              },
+              {
+                "event_id": 87,
+                "ip_group": "203.0.113.21",
+                "scenario": "fast_failed_logins",
+                "source_group": "test-pipeline-source-01"
+              },
+              {
+                "event_id": 88,
+                "ip_group": "203.0.113.21",
+                "scenario": "fast_failed_logins",
+                "source_group": "test-pipeline-source-01"
+              },
+              {
+                "event_id": 89,
+                "ip_group": "203.0.113.21",
+                "scenario": "fast_failed_logins",
+                "source_group": "test-pipeline-source-01"
+              },
+              {
+                "event_id": 90,
+                "ip_group": "203.0.113.21",
+                "scenario": "fast_failed_logins",
+                "source_group": "test-pipeline-source-01"
+              },
+              {
+                "event_id": 91,
+                "ip_group": "203.0.113.21",
+                "scenario": "fast_failed_logins",
+                "source_group": "test-pipeline-source-01"
+              },
+              {
+                "event_id": 92,
+                "ip_group": "203.0.113.21",
+                "scenario": "fast_failed_logins",
+                "source_group": "test-pipeline-source-01"
+              },
+              {
+                "event_id": 93,
+                "ip_group": "203.0.113.21",
+                "scenario": "fast_failed_logins",
+                "source_group": "test-pipeline-source-01"
+              },
+              {
+                "event_id": 110,
+                "ip_group": "203.0.113.37",
+                "scenario": "fast_failed_logins",
+                "source_group": "test-pipeline-source-02"
+              },
+              {
+                "event_id": 111,
+                "ip_group": "203.0.113.37",
+                "scenario": "fast_failed_logins",
+                "source_group": "test-pipeline-source-02"
+              },
+              {
+                "event_id": 112,
+                "ip_group": "203.0.113.37",
+                "scenario": "fast_failed_logins",
+                "source_group": "test-pipeline-source-02"
+              },
+              {
+                "event_id": 113,
+                "ip_group": "203.0.113.37",
+                "scenario": "fast_failed_logins",
+                "source_group": "test-pipeline-source-02"
+              },
+              {
+                "event_id": 114,
+                "ip_group": "203.0.113.37",
+                "scenario": "fast_failed_logins",
+                "source_group": "test-pipeline-source-02"
+              },
+              {
+                "event_id": 115,
+                "ip_group": "203.0.113.37",
+                "scenario": "fast_failed_logins",
+                "source_group": "test-pipeline-source-02"
+              },
+              {
+                "event_id": 116,
+                "ip_group": "203.0.113.37",
+                "scenario": "fast_failed_logins",
+                "source_group": "test-pipeline-source-02"
+              },
+              {
+                "event_id": 117,
+                "ip_group": "203.0.113.37",
+                "scenario": "fast_failed_logins",
+                "source_group": "test-pipeline-source-02"
+              }
+            ],
+            "precision": 1.0,
+            "recall": 0.1111111111111111
+          },
+          "shadow": {
+            "confusion": {
+              "fn": 9,
+              "fp": 0,
+              "tn": 0,
+              "tp": 18
+            },
+            "false_positive_rate": null,
+            "misses": [
+              {
+                "event_id": 63,
+                "ip_group": "203.0.113.5",
+                "scenario": "fast_failed_logins",
+                "source_group": "test-pipeline-source-00"
+              },
+              {
+                "event_id": 64,
+                "ip_group": "203.0.113.5",
+                "scenario": "fast_failed_logins",
+                "source_group": "test-pipeline-source-00"
+              },
+              {
+                "event_id": 65,
+                "ip_group": "203.0.113.5",
+                "scenario": "fast_failed_logins",
+                "source_group": "test-pipeline-source-00"
+              },
+              {
+                "event_id": 86,
+                "ip_group": "203.0.113.21",
+                "scenario": "fast_failed_logins",
+                "source_group": "test-pipeline-source-01"
+              },
+              {
+                "event_id": 87,
+                "ip_group": "203.0.113.21",
+                "scenario": "fast_failed_logins",
+                "source_group": "test-pipeline-source-01"
+              },
+              {
+                "event_id": 88,
+                "ip_group": "203.0.113.21",
+                "scenario": "fast_failed_logins",
+                "source_group": "test-pipeline-source-01"
+              },
+              {
+                "event_id": 110,
+                "ip_group": "203.0.113.37",
+                "scenario": "fast_failed_logins",
+                "source_group": "test-pipeline-source-02"
+              },
+              {
+                "event_id": 111,
+                "ip_group": "203.0.113.37",
+                "scenario": "fast_failed_logins",
+                "source_group": "test-pipeline-source-02"
+              },
+              {
+                "event_id": 112,
+                "ip_group": "203.0.113.37",
+                "scenario": "fast_failed_logins",
+                "source_group": "test-pipeline-source-02"
+              }
+            ],
+            "precision": 1.0,
+            "recall": 0.6666666666666666
+          }
+        },
+        "low_and_slow": {
+          "attack_events": 6,
+          "benign_events": 0,
+          "events": 6,
+          "rules": {
+            "confusion": {
+              "fn": 6,
+              "fp": 0,
+              "tn": 0,
+              "tp": 0
+            },
+            "false_positive_rate": null,
+            "misses": [
+              {
+                "event_id": 60,
+                "ip_group": "203.0.113.3",
+                "scenario": "low_and_slow",
+                "source_group": "test-pipeline-source-00"
+              },
+              {
+                "event_id": 61,
+                "ip_group": "203.0.113.3",
+                "scenario": "low_and_slow",
+                "source_group": "test-pipeline-source-00"
+              },
+              {
+                "event_id": 83,
+                "ip_group": "203.0.113.19",
+                "scenario": "low_and_slow",
+                "source_group": "test-pipeline-source-01"
+              },
+              {
+                "event_id": 84,
+                "ip_group": "203.0.113.19",
+                "scenario": "low_and_slow",
+                "source_group": "test-pipeline-source-01"
+              },
+              {
+                "event_id": 107,
+                "ip_group": "203.0.113.35",
+                "scenario": "low_and_slow",
+                "source_group": "test-pipeline-source-02"
+              },
+              {
+                "event_id": 108,
+                "ip_group": "203.0.113.35",
+                "scenario": "low_and_slow",
+                "source_group": "test-pipeline-source-02"
+              }
+            ],
+            "precision": null,
+            "recall": 0.0
+          },
+          "shadow": {
+            "confusion": {
+              "fn": 6,
+              "fp": 0,
+              "tn": 0,
+              "tp": 0
+            },
+            "false_positive_rate": null,
+            "misses": [
+              {
+                "event_id": 60,
+                "ip_group": "203.0.113.3",
+                "scenario": "low_and_slow",
+                "source_group": "test-pipeline-source-00"
+              },
+              {
+                "event_id": 61,
+                "ip_group": "203.0.113.3",
+                "scenario": "low_and_slow",
+                "source_group": "test-pipeline-source-00"
+              },
+              {
+                "event_id": 83,
+                "ip_group": "203.0.113.19",
+                "scenario": "low_and_slow",
+                "source_group": "test-pipeline-source-01"
+              },
+              {
+                "event_id": 84,
+                "ip_group": "203.0.113.19",
+                "scenario": "low_and_slow",
+                "source_group": "test-pipeline-source-01"
+              },
+              {
+                "event_id": 107,
+                "ip_group": "203.0.113.35",
+                "scenario": "low_and_slow",
+                "source_group": "test-pipeline-source-02"
+              },
+              {
+                "event_id": 108,
+                "ip_group": "203.0.113.35",
+                "scenario": "low_and_slow",
+                "source_group": "test-pipeline-source-02"
+              }
+            ],
+            "precision": null,
+            "recall": 0.0
+          }
+        },
+        "obvious_attack": {
+          "attack_events": 3,
+          "benign_events": 0,
+          "events": 3,
+          "rules": {
+            "confusion": {
+              "fn": 0,
+              "fp": 0,
+              "tn": 0,
+              "tp": 3
+            },
+            "false_positive_rate": null,
+            "misses": [],
+            "precision": 1.0,
+            "recall": 1.0
+          },
+          "shadow": {
+            "confusion": {
+              "fn": 3,
+              "fp": 0,
+              "tn": 0,
+              "tp": 0
+            },
+            "false_positive_rate": null,
+            "misses": [
+              {
+                "event_id": 62,
+                "ip_group": "203.0.113.4",
+                "scenario": "obvious_attack",
+                "source_group": "test-pipeline-source-00"
+              },
+              {
+                "event_id": 85,
+                "ip_group": "203.0.113.20",
+                "scenario": "obvious_attack",
+                "source_group": "test-pipeline-source-01"
+              },
+              {
+                "event_id": 109,
+                "ip_group": "203.0.113.36",
+                "scenario": "obvious_attack",
+                "source_group": "test-pipeline-source-02"
+              }
+            ],
+            "precision": null,
+            "recall": 0.0
+          }
+        },
+        "routine": {
+          "attack_events": 0,
+          "benign_events": 6,
+          "events": 6,
+          "rules": {
+            "confusion": {
+              "fn": 0,
+              "fp": 0,
+              "tn": 6,
+              "tp": 0
+            },
+            "false_positive_rate": 0.0,
+            "misses": [],
+            "precision": null,
+            "recall": null
+          },
+          "shadow": {
+            "confusion": {
+              "fn": 0,
+              "fp": 0,
+              "tn": 6,
+              "tp": 0
+            },
+            "false_positive_rate": 0.0,
+            "misses": [],
+            "precision": null,
+            "recall": null
+          }
+        }
+      },
+      "shadow": {
+        "confusion": {
+          "fn": 18,
+          "fp": 8,
+          "tn": 27,
+          "tp": 18
+        },
+        "false_positive_rate": 0.22857142857142856,
+        "misses": [
+          {
+            "event_id": 60,
+            "ip_group": "203.0.113.3",
+            "scenario": "low_and_slow",
+            "source_group": "test-pipeline-source-00"
+          },
+          {
+            "event_id": 61,
+            "ip_group": "203.0.113.3",
+            "scenario": "low_and_slow",
+            "source_group": "test-pipeline-source-00"
+          },
+          {
+            "event_id": 62,
+            "ip_group": "203.0.113.4",
+            "scenario": "obvious_attack",
+            "source_group": "test-pipeline-source-00"
+          },
+          {
+            "event_id": 63,
+            "ip_group": "203.0.113.5",
+            "scenario": "fast_failed_logins",
+            "source_group": "test-pipeline-source-00"
+          },
+          {
+            "event_id": 64,
+            "ip_group": "203.0.113.5",
+            "scenario": "fast_failed_logins",
+            "source_group": "test-pipeline-source-00"
+          },
+          {
+            "event_id": 65,
+            "ip_group": "203.0.113.5",
+            "scenario": "fast_failed_logins",
+            "source_group": "test-pipeline-source-00"
+          },
+          {
+            "event_id": 83,
+            "ip_group": "203.0.113.19",
+            "scenario": "low_and_slow",
+            "source_group": "test-pipeline-source-01"
+          },
+          {
+            "event_id": 84,
+            "ip_group": "203.0.113.19",
+            "scenario": "low_and_slow",
+            "source_group": "test-pipeline-source-01"
+          },
+          {
+            "event_id": 85,
+            "ip_group": "203.0.113.20",
+            "scenario": "obvious_attack",
+            "source_group": "test-pipeline-source-01"
+          },
+          {
+            "event_id": 86,
+            "ip_group": "203.0.113.21",
+            "scenario": "fast_failed_logins",
+            "source_group": "test-pipeline-source-01"
+          },
+          {
+            "event_id": 87,
+            "ip_group": "203.0.113.21",
+            "scenario": "fast_failed_logins",
+            "source_group": "test-pipeline-source-01"
+          },
+          {
+            "event_id": 88,
+            "ip_group": "203.0.113.21",
+            "scenario": "fast_failed_logins",
+            "source_group": "test-pipeline-source-01"
+          },
+          {
+            "event_id": 107,
+            "ip_group": "203.0.113.35",
+            "scenario": "low_and_slow",
+            "source_group": "test-pipeline-source-02"
+          },
+          {
+            "event_id": 108,
+            "ip_group": "203.0.113.35",
+            "scenario": "low_and_slow",
+            "source_group": "test-pipeline-source-02"
+          },
+          {
+            "event_id": 109,
+            "ip_group": "203.0.113.36",
+            "scenario": "obvious_attack",
+            "source_group": "test-pipeline-source-02"
+          },
+          {
+            "event_id": 110,
+            "ip_group": "203.0.113.37",
+            "scenario": "fast_failed_logins",
+            "source_group": "test-pipeline-source-02"
+          },
+          {
+            "event_id": 111,
+            "ip_group": "203.0.113.37",
+            "scenario": "fast_failed_logins",
+            "source_group": "test-pipeline-source-02"
+          },
+          {
+            "event_id": 112,
+            "ip_group": "203.0.113.37",
+            "scenario": "fast_failed_logins",
+            "source_group": "test-pipeline-source-02"
+          }
+        ],
+        "precision": 0.6923076923076923,
+        "recall": 0.5
+      }
+    },
+    "validation": {
+      "attack_events": 24,
+      "benign_events": 23,
+      "events": 47,
+      "rules": {
+        "confusion": {
+          "fn": 20,
+          "fp": 0,
+          "tn": 23,
+          "tp": 4
+        },
+        "false_positive_rate": 0.0,
+        "misses": [
+          {
+            "event_id": 13,
+            "ip_group": "198.51.100.3",
+            "scenario": "low_and_slow",
+            "source_group": "validation-pipeline-source-00"
+          },
+          {
+            "event_id": 14,
+            "ip_group": "198.51.100.3",
+            "scenario": "low_and_slow",
+            "source_group": "validation-pipeline-source-00"
+          },
+          {
+            "event_id": 16,
+            "ip_group": "198.51.100.5",
+            "scenario": "fast_failed_logins",
+            "source_group": "validation-pipeline-source-00"
+          },
+          {
+            "event_id": 17,
+            "ip_group": "198.51.100.5",
+            "scenario": "fast_failed_logins",
+            "source_group": "validation-pipeline-source-00"
+          },
+          {
+            "event_id": 18,
+            "ip_group": "198.51.100.5",
+            "scenario": "fast_failed_logins",
+            "source_group": "validation-pipeline-source-00"
+          },
+          {
+            "event_id": 19,
+            "ip_group": "198.51.100.5",
+            "scenario": "fast_failed_logins",
+            "source_group": "validation-pipeline-source-00"
+          },
+          {
+            "event_id": 20,
+            "ip_group": "198.51.100.5",
+            "scenario": "fast_failed_logins",
+            "source_group": "validation-pipeline-source-00"
+          },
+          {
+            "event_id": 21,
+            "ip_group": "198.51.100.5",
+            "scenario": "fast_failed_logins",
+            "source_group": "validation-pipeline-source-00"
+          },
+          {
+            "event_id": 22,
+            "ip_group": "198.51.100.5",
+            "scenario": "fast_failed_logins",
+            "source_group": "validation-pipeline-source-00"
+          },
+          {
+            "event_id": 23,
+            "ip_group": "198.51.100.5",
+            "scenario": "fast_failed_logins",
+            "source_group": "validation-pipeline-source-00"
+          },
+          {
+            "event_id": 36,
+            "ip_group": "198.51.100.19",
+            "scenario": "low_and_slow",
+            "source_group": "validation-pipeline-source-01"
+          },
+          {
+            "event_id": 37,
+            "ip_group": "198.51.100.19",
+            "scenario": "low_and_slow",
+            "source_group": "validation-pipeline-source-01"
+          },
+          {
+            "event_id": 39,
+            "ip_group": "198.51.100.21",
+            "scenario": "fast_failed_logins",
+            "source_group": "validation-pipeline-source-01"
+          },
+          {
+            "event_id": 40,
+            "ip_group": "198.51.100.21",
+            "scenario": "fast_failed_logins",
+            "source_group": "validation-pipeline-source-01"
+          },
+          {
+            "event_id": 41,
+            "ip_group": "198.51.100.21",
+            "scenario": "fast_failed_logins",
+            "source_group": "validation-pipeline-source-01"
+          },
+          {
+            "event_id": 42,
+            "ip_group": "198.51.100.21",
+            "scenario": "fast_failed_logins",
+            "source_group": "validation-pipeline-source-01"
+          },
+          {
+            "event_id": 43,
+            "ip_group": "198.51.100.21",
+            "scenario": "fast_failed_logins",
+            "source_group": "validation-pipeline-source-01"
+          },
+          {
+            "event_id": 44,
+            "ip_group": "198.51.100.21",
+            "scenario": "fast_failed_logins",
+            "source_group": "validation-pipeline-source-01"
+          },
+          {
+            "event_id": 45,
+            "ip_group": "198.51.100.21",
+            "scenario": "fast_failed_logins",
+            "source_group": "validation-pipeline-source-01"
+          },
+          {
+            "event_id": 46,
+            "ip_group": "198.51.100.21",
+            "scenario": "fast_failed_logins",
+            "source_group": "validation-pipeline-source-01"
+          }
+        ],
+        "precision": 1.0,
+        "recall": 0.16666666666666666
+      },
+      "scenarios": {
+        "benign_burst": {
+          "attack_events": 0,
+          "benign_events": 19,
+          "events": 19,
+          "rules": {
+            "confusion": {
+              "fn": 0,
+              "fp": 0,
+              "tn": 19,
+              "tp": 0
+            },
+            "false_positive_rate": 0.0,
+            "misses": [],
+            "precision": null,
+            "recall": null
+          },
+          "shadow": {
+            "confusion": {
+              "fn": 0,
+              "fp": 5,
+              "tn": 14,
+              "tp": 0
+            },
+            "false_positive_rate": 0.2631578947368421,
+            "misses": [],
+            "precision": 0.0,
+            "recall": null
+          }
+        },
+        "fast_failed_logins": {
+          "attack_events": 18,
+          "benign_events": 0,
+          "events": 18,
+          "rules": {
+            "confusion": {
+              "fn": 16,
+              "fp": 0,
+              "tn": 0,
+              "tp": 2
+            },
+            "false_positive_rate": null,
+            "misses": [
+              {
+                "event_id": 16,
+                "ip_group": "198.51.100.5",
+                "scenario": "fast_failed_logins",
+                "source_group": "validation-pipeline-source-00"
+              },
+              {
+                "event_id": 17,
+                "ip_group": "198.51.100.5",
+                "scenario": "fast_failed_logins",
+                "source_group": "validation-pipeline-source-00"
+              },
+              {
+                "event_id": 18,
+                "ip_group": "198.51.100.5",
+                "scenario": "fast_failed_logins",
+                "source_group": "validation-pipeline-source-00"
+              },
+              {
+                "event_id": 19,
+                "ip_group": "198.51.100.5",
+                "scenario": "fast_failed_logins",
+                "source_group": "validation-pipeline-source-00"
+              },
+              {
+                "event_id": 20,
+                "ip_group": "198.51.100.5",
+                "scenario": "fast_failed_logins",
+                "source_group": "validation-pipeline-source-00"
+              },
+              {
+                "event_id": 21,
+                "ip_group": "198.51.100.5",
+                "scenario": "fast_failed_logins",
+                "source_group": "validation-pipeline-source-00"
+              },
+              {
+                "event_id": 22,
+                "ip_group": "198.51.100.5",
+                "scenario": "fast_failed_logins",
+                "source_group": "validation-pipeline-source-00"
+              },
+              {
+                "event_id": 23,
+                "ip_group": "198.51.100.5",
+                "scenario": "fast_failed_logins",
+                "source_group": "validation-pipeline-source-00"
+              },
+              {
+                "event_id": 39,
+                "ip_group": "198.51.100.21",
+                "scenario": "fast_failed_logins",
+                "source_group": "validation-pipeline-source-01"
+              },
+              {
+                "event_id": 40,
+                "ip_group": "198.51.100.21",
+                "scenario": "fast_failed_logins",
+                "source_group": "validation-pipeline-source-01"
+              },
+              {
+                "event_id": 41,
+                "ip_group": "198.51.100.21",
+                "scenario": "fast_failed_logins",
+                "source_group": "validation-pipeline-source-01"
+              },
+              {
+                "event_id": 42,
+                "ip_group": "198.51.100.21",
+                "scenario": "fast_failed_logins",
+                "source_group": "validation-pipeline-source-01"
+              },
+              {
+                "event_id": 43,
+                "ip_group": "198.51.100.21",
+                "scenario": "fast_failed_logins",
+                "source_group": "validation-pipeline-source-01"
+              },
+              {
+                "event_id": 44,
+                "ip_group": "198.51.100.21",
+                "scenario": "fast_failed_logins",
+                "source_group": "validation-pipeline-source-01"
+              },
+              {
+                "event_id": 45,
+                "ip_group": "198.51.100.21",
+                "scenario": "fast_failed_logins",
+                "source_group": "validation-pipeline-source-01"
+              },
+              {
+                "event_id": 46,
+                "ip_group": "198.51.100.21",
+                "scenario": "fast_failed_logins",
+                "source_group": "validation-pipeline-source-01"
+              }
+            ],
+            "precision": 1.0,
+            "recall": 0.1111111111111111
+          },
+          "shadow": {
+            "confusion": {
+              "fn": 6,
+              "fp": 0,
+              "tn": 0,
+              "tp": 12
+            },
+            "false_positive_rate": null,
+            "misses": [
+              {
+                "event_id": 16,
+                "ip_group": "198.51.100.5",
+                "scenario": "fast_failed_logins",
+                "source_group": "validation-pipeline-source-00"
+              },
+              {
+                "event_id": 17,
+                "ip_group": "198.51.100.5",
+                "scenario": "fast_failed_logins",
+                "source_group": "validation-pipeline-source-00"
+              },
+              {
+                "event_id": 18,
+                "ip_group": "198.51.100.5",
+                "scenario": "fast_failed_logins",
+                "source_group": "validation-pipeline-source-00"
+              },
+              {
+                "event_id": 39,
+                "ip_group": "198.51.100.21",
+                "scenario": "fast_failed_logins",
+                "source_group": "validation-pipeline-source-01"
+              },
+              {
+                "event_id": 40,
+                "ip_group": "198.51.100.21",
+                "scenario": "fast_failed_logins",
+                "source_group": "validation-pipeline-source-01"
+              },
+              {
+                "event_id": 41,
+                "ip_group": "198.51.100.21",
+                "scenario": "fast_failed_logins",
+                "source_group": "validation-pipeline-source-01"
+              }
+            ],
+            "precision": 1.0,
+            "recall": 0.6666666666666666
+          }
+        },
+        "low_and_slow": {
+          "attack_events": 4,
+          "benign_events": 0,
+          "events": 4,
+          "rules": {
+            "confusion": {
+              "fn": 4,
+              "fp": 0,
+              "tn": 0,
+              "tp": 0
+            },
+            "false_positive_rate": null,
+            "misses": [
+              {
+                "event_id": 13,
+                "ip_group": "198.51.100.3",
+                "scenario": "low_and_slow",
+                "source_group": "validation-pipeline-source-00"
+              },
+              {
+                "event_id": 14,
+                "ip_group": "198.51.100.3",
+                "scenario": "low_and_slow",
+                "source_group": "validation-pipeline-source-00"
+              },
+              {
+                "event_id": 36,
+                "ip_group": "198.51.100.19",
+                "scenario": "low_and_slow",
+                "source_group": "validation-pipeline-source-01"
+              },
+              {
+                "event_id": 37,
+                "ip_group": "198.51.100.19",
+                "scenario": "low_and_slow",
+                "source_group": "validation-pipeline-source-01"
+              }
+            ],
+            "precision": null,
+            "recall": 0.0
+          },
+          "shadow": {
+            "confusion": {
+              "fn": 4,
+              "fp": 0,
+              "tn": 0,
+              "tp": 0
+            },
+            "false_positive_rate": null,
+            "misses": [
+              {
+                "event_id": 13,
+                "ip_group": "198.51.100.3",
+                "scenario": "low_and_slow",
+                "source_group": "validation-pipeline-source-00"
+              },
+              {
+                "event_id": 14,
+                "ip_group": "198.51.100.3",
+                "scenario": "low_and_slow",
+                "source_group": "validation-pipeline-source-00"
+              },
+              {
+                "event_id": 36,
+                "ip_group": "198.51.100.19",
+                "scenario": "low_and_slow",
+                "source_group": "validation-pipeline-source-01"
+              },
+              {
+                "event_id": 37,
+                "ip_group": "198.51.100.19",
+                "scenario": "low_and_slow",
+                "source_group": "validation-pipeline-source-01"
+              }
+            ],
+            "precision": null,
+            "recall": 0.0
+          }
+        },
+        "obvious_attack": {
+          "attack_events": 2,
+          "benign_events": 0,
+          "events": 2,
+          "rules": {
+            "confusion": {
+              "fn": 0,
+              "fp": 0,
+              "tn": 0,
+              "tp": 2
+            },
+            "false_positive_rate": null,
+            "misses": [],
+            "precision": 1.0,
+            "recall": 1.0
+          },
+          "shadow": {
+            "confusion": {
+              "fn": 2,
+              "fp": 0,
+              "tn": 0,
+              "tp": 0
+            },
+            "false_positive_rate": null,
+            "misses": [
+              {
+                "event_id": 15,
+                "ip_group": "198.51.100.4",
+                "scenario": "obvious_attack",
+                "source_group": "validation-pipeline-source-00"
+              },
+              {
+                "event_id": 38,
+                "ip_group": "198.51.100.20",
+                "scenario": "obvious_attack",
+                "source_group": "validation-pipeline-source-01"
+              }
+            ],
+            "precision": null,
+            "recall": 0.0
+          }
+        },
+        "routine": {
+          "attack_events": 0,
+          "benign_events": 4,
+          "events": 4,
+          "rules": {
+            "confusion": {
+              "fn": 0,
+              "fp": 0,
+              "tn": 4,
+              "tp": 0
+            },
+            "false_positive_rate": 0.0,
+            "misses": [],
+            "precision": null,
+            "recall": null
+          },
+          "shadow": {
+            "confusion": {
+              "fn": 0,
+              "fp": 0,
+              "tn": 4,
+              "tp": 0
+            },
+            "false_positive_rate": 0.0,
+            "misses": [],
+            "precision": null,
+            "recall": null
+          }
+        }
+      },
+      "shadow": {
+        "confusion": {
+          "fn": 12,
+          "fp": 5,
+          "tn": 18,
+          "tp": 12
+        },
+        "false_positive_rate": 0.21739130434782608,
+        "misses": [
+          {
+            "event_id": 13,
+            "ip_group": "198.51.100.3",
+            "scenario": "low_and_slow",
+            "source_group": "validation-pipeline-source-00"
+          },
+          {
+            "event_id": 14,
+            "ip_group": "198.51.100.3",
+            "scenario": "low_and_slow",
+            "source_group": "validation-pipeline-source-00"
+          },
+          {
+            "event_id": 15,
+            "ip_group": "198.51.100.4",
+            "scenario": "obvious_attack",
+            "source_group": "validation-pipeline-source-00"
+          },
+          {
+            "event_id": 16,
+            "ip_group": "198.51.100.5",
+            "scenario": "fast_failed_logins",
+            "source_group": "validation-pipeline-source-00"
+          },
+          {
+            "event_id": 17,
+            "ip_group": "198.51.100.5",
+            "scenario": "fast_failed_logins",
+            "source_group": "validation-pipeline-source-00"
+          },
+          {
+            "event_id": 18,
+            "ip_group": "198.51.100.5",
+            "scenario": "fast_failed_logins",
+            "source_group": "validation-pipeline-source-00"
+          },
+          {
+            "event_id": 36,
+            "ip_group": "198.51.100.19",
+            "scenario": "low_and_slow",
+            "source_group": "validation-pipeline-source-01"
+          },
+          {
+            "event_id": 37,
+            "ip_group": "198.51.100.19",
+            "scenario": "low_and_slow",
+            "source_group": "validation-pipeline-source-01"
+          },
+          {
+            "event_id": 38,
+            "ip_group": "198.51.100.20",
+            "scenario": "obvious_attack",
+            "source_group": "validation-pipeline-source-01"
+          },
+          {
+            "event_id": 39,
+            "ip_group": "198.51.100.21",
+            "scenario": "fast_failed_logins",
+            "source_group": "validation-pipeline-source-01"
+          },
+          {
+            "event_id": 40,
+            "ip_group": "198.51.100.21",
+            "scenario": "fast_failed_logins",
+            "source_group": "validation-pipeline-source-01"
+          },
+          {
+            "event_id": 41,
+            "ip_group": "198.51.100.21",
+            "scenario": "fast_failed_logins",
+            "source_group": "validation-pipeline-source-01"
+          }
+        ],
+        "precision": 0.7058823529411765,
+        "recall": 0.5
+      }
+    }
+  },
+  "schema_version": 1
+}
