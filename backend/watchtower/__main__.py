@@ -157,9 +157,11 @@ def _verify(args) -> int:
         return 0
 
     if result.ok:
-        print(f"✅ Chain verified — {n} blocks, every digest recomputed from the live event rows.")
+        print(f"✅ {n} present blocks verified — all available digests match.")
         if checkpoint:
             print(f"   External checkpoint matched at height {checkpoint['height']}.")
+        else:
+            print("   No external checkpoint: deletion of a final block cannot be detected.")
         if result.pruned:
             print(
                 f"   {result.pruned} block(s) reference events removed by retention; those "
