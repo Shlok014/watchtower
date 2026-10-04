@@ -278,7 +278,9 @@ The other actions are equally literal:
 * **`incident_report`** — writes a real `INC-<date>-<seq>.md` and `.json` with
   the evidence event ids **and the ledger blocks covering them**, so the report
   points at something whose integrity can be independently checked. It also says
-  in its own text that it is a record, not a remediation.
+  in its own text that it is a record, not a remediation. Report filenames are
+  claimed exclusively across concurrent writers, and new report files are
+  created with owner-only permissions (`0600`).
 * The `malware_detected` playbook deliberately contains **no** `block_ip`. This
   process cannot isolate a host, so it records the incident and says the rest
   was not executed, rather than blocking an address as a substitute for the
