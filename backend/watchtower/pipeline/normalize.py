@@ -15,6 +15,7 @@ from .. import threatintel
 EVENT_TYPES = {
     "login_success": {"severity": "low", "category": "authentication"},
     "failed_login": {"severity": "medium", "category": "authentication"},
+    "auth_invalid_user": {"severity": "medium", "category": "authentication"},
     "brute_force": {"severity": "critical", "category": "attack"},
     "suspicious_ip": {"severity": "high", "category": "network"},
     "port_scan": {"severity": "high", "category": "reconnaissance"},
@@ -80,6 +81,7 @@ def normalize_log(raw_log: dict) -> dict:
         "event_type": meta["category"],
         "severity": meta["severity"],
         "ip": ip,
+        "transport_peer_ip": raw_log.get("transport_peer_ip"),
         "user": raw_log.get("user", "unknown"),
         "message": raw_log.get("message", ""),
         "origin": origin,

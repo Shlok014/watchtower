@@ -166,18 +166,25 @@ flows through real code — any alert it raises comes from the correlation windo
 on real addresses, never from a lookup table of scary words. Measured on this
 machine: 167 replayed events, 0 alerts, 0 fabricated threats.
 
-OpenSSH replay is different, and the difference is the point: an sshd log
-genuinely *is* an authentication log, so `Failed password for invalid user` is
-matched literally and becomes `failed_login`. Nothing is inferred beyond the
-message the daemon emitted about itself.
+OpenSSH replay and trusted local syslog use the same strict sshd message parser.
+Recognized `Failed password`, `Invalid user`, and `Accepted password/publickey`
+messages with a valid literal IPv4 or IPv6 actor become authentication events.
+`Invalid user` is recorded separately and does not count as a failed password;
+sshd often emits both lines for the same attempt.
+Malformed or unsupported messages stay generic logs. Replay uses dataset text;
+it does not establish the authenticity of that text.
 
 Two details in the syslog listener worth the thirty seconds:
 
-* **The address comes from the socket, not the message.** RFC 3164's HOSTNAME is
-  whatever the sender wrote, and forwarders rewrite it routinely. The peer
-  address is the one thing about a datagram the sender could not simply assert,
-  so that is what correlation keys on. The claimed hostname is kept as `source`,
-  and not trusted as an address.
+* **Actor attribution is opt-in and local.** By default,
+  `WATCHTOWER_TRUSTED_SYSLOG_PEERS` is empty. Every UDP event uses its socket
+  peer for correlation. Only a listed **loopback** peer forwarding a strictly
+  parsed sshd message can make `ip` the reported actor used for detection and
+  response. The actual peer remains `transport_peer_ip` in the event API and
+  ledger digest; legacy events have `null`. RFC hostnames remain untrusted.
+  Remote UDP source addresses can be spoofed and cannot be configured as
+  trusted actors. A local collector must authenticate its own upstream logs;
+  this listener does not provide that authentication.
 * **Port 5514, not 514,** because 514 needs root and a tool that asks for root
   to accept a datagram has made a bad trade. Note that `logger -n host -P port`
   is util-linux and **the BSD `logger` macOS ships rejects it**. Portable:
@@ -639,6 +646,7 @@ resolved, and `GET /api/v1/config` reports it from a running one.
 | `WATCHTOWER_RETENTION_HOURS` | `24` | events only; the ledger is exempt |
 | `WATCHTOWER_ALERT_THRESHOLD` | `0.45` | changing it changes `ruleset_version` |
 | `WATCHTOWER_SOURCES` | `synthetic` | comma-separated |
+| `WATCHTOWER_TRUSTED_SYSLOG_PEERS` | unset | exact loopback IP literals for local collectors allowed to forward sshd actors; empty by default |
 | `WATCHTOWER_CORS_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173` | |
 | `WATCHTOWER_TRUSTED_HOSTS` | `localhost,127.0.0.1` | Host allowlist; add an intended hostname explicitly |
 | `WATCHTOWER_HOST` / `WATCHTOWER_PORT` | `127.0.0.1` / `5001` | |

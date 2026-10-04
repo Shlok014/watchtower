@@ -78,6 +78,7 @@ def _event_row_to_dict(r, shadow_verdict=None) -> dict:
         "event_type": r["event_type"],
         "severity": r["severity"],
         "ip": r["ip"],
+        "transport_peer_ip": r["transport_peer_ip"],
         "user": r["user"],
         "message": r["message"],
         "log_format": r["log_format"],
@@ -106,9 +107,9 @@ def insert_event(conn, normalized: dict, ingested_ts_ms: int) -> int:
         raise ValueError(f"event {normalized.get('id')} has no origin")
     cur = conn.execute(
         """INSERT INTO events (ts_ms, ingested_ts_ms, source, event, event_type, severity,
-                               ip, user, message, log_format, origin, dropped,
+                               ip, transport_peer_ip, user, message, log_format, origin, dropped,
                                rep_verdict, rep_score, rep_sources, rep_checked, rep_detail)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (
             from_iso(normalized["timestamp"]),
             ingested_ts_ms,
@@ -117,6 +118,7 @@ def insert_event(conn, normalized: dict, ingested_ts_ms: int) -> int:
             normalized["event_type"],
             normalized["severity"],
             normalized["ip"],
+            normalized.get("transport_peer_ip"),
             normalized["user"],
             normalized["message"],
             normalized["log_format"],

@@ -8,12 +8,15 @@ calm.
 
 import os
 import socket
+import sqlite3
 import time
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 
-from watchtower import runtime
+from watchtower import config, ledger, runtime
+from watchtower.app import create_app
 from watchtower.pipeline.consumer import process_log
 from watchtower.sources import file_tailer, replay, syslog_server
 from watchtower.store import db, repos
@@ -63,7 +66,7 @@ def test_replay_rejects_a_line_it_cannot_parse():
 def test_openssh_replay_reads_authentication_outcomes_literally():
     line = "Dec 10 06:55:46 LabSZ sshd[24200]: Invalid user webmaster from 173.234.31.186"
     raw = replay.parse_openssh(line)
-    assert raw["event"] == "failed_login"
+    assert raw["event"] == "auth_invalid_user"
     assert raw["ip"] == "173.234.31.186"
     assert raw["user"] == "webmaster"
     assert raw["source"] == "LabSZ"
@@ -73,6 +76,13 @@ def test_openssh_replay_reads_authentication_outcomes_literally():
 def test_openssh_replay_recognises_success():
     line = "Dec 10 09:32:20 LabSZ sshd[24680]: Accepted password for fztu from 119.137.62.142 port 47154"
     assert replay.parse_openssh(line)["event"] == "login_success"
+
+
+def test_openssh_replay_does_not_classify_a_broken_actor_address():
+    line = "Dec 10 06:55:46 LabSZ sshd[24200]: Failed password for root from 203.0.113.8.9 port 22 ssh2"
+    raw = replay.parse_openssh(line)
+    assert raw["event"] == "log_info"
+    assert raw["ip"] == "127.0.0.1"
 
 
 def test_replay_through_the_pipeline_separates_event_time_from_ingest_time():
@@ -138,6 +148,152 @@ def test_syslog_attributes_to_the_socket_peer_not_the_claimed_hostname():
     raw = syslog_server.parse_syslog(payload, "198.51.100.7")
     assert raw["ip"] == "198.51.100.7"
     assert raw["source"] == "i-am-definitely-your-firewall"  # kept, but not trusted as the address
+
+
+def test_remote_udp_peer_cannot_be_trusted_for_ssh_actor_enforcement():
+    with pytest.raises(ValueError, match="loopback"):
+        config.replace(trusted_syslog_peers=("198.51.100.7",))
+
+
+def test_trusted_local_sshd_message_attributes_actor_separately():
+    payload = "<34>Oct 11 22:14:15 ssh-box sshd[99]: Failed password for root from 203.0.113.8 port 22 ssh2"
+    raw = syslog_server.parse_syslog(payload, "127.0.0.1", trusted_peers=("127.0.0.1",))
+    assert (raw["event"], raw["ip"], raw["transport_peer_ip"]) == (
+        "failed_login",
+        "203.0.113.8",
+        "127.0.0.1",
+    )
+
+
+def test_trusted_local_rfc5424_ssh_ipv6_actor():
+    payload = "<34>1 2026-10-04T10:00:00Z ssh-box sshd 99 - - Accepted publickey for root from 2001:db8::8 port 22 ssh2"
+    raw = syslog_server.parse_syslog(payload, "::1", trusted_peers=("::1",))
+    assert (raw["event"], raw["ip"], raw["transport_peer_ip"]) == (
+        "login_success",
+        "2001:db8::8",
+        "::1",
+    )
+
+
+def test_untrusted_sshd_message_cannot_redirect_attribution():
+    payload = "<34>Oct 11 22:14:15 ssh-box sshd[99]: Failed password for root from 203.0.113.8 port 22 ssh2"
+    raw = syslog_server.parse_syslog(payload, "127.0.0.1")
+    assert (raw["event"], raw["ip"], raw["transport_peer_ip"]) == (
+        "log_critical",
+        "127.0.0.1",
+        "127.0.0.1",
+    )
+
+
+def test_parser_never_trusts_a_remote_udp_peer_even_if_caller_lists_it():
+    payload = "<34>Oct 11 22:14:15 ssh-box sshd[99]: Failed password for root from 203.0.113.8 port 22 ssh2"
+    raw = syslog_server.parse_syslog(payload, "198.51.100.7", trusted_peers=("198.51.100.7",))
+    assert (raw["event"], raw["ip"]) == ("log_critical", "198.51.100.7")
+
+
+def test_trusted_sshd_event_persists_actor_and_peer_in_api_and_ledger():
+    payload = "<34>Oct 11 22:14:15 ssh-box sshd[99]: Failed password for root from 203.0.113.8 port 22 ssh2"
+    process_log(syslog_server.parse_syslog(payload, "127.0.0.1", trusted_peers=("127.0.0.1",)))
+    with create_app(start_sources=False).test_client() as client:
+        event = client.get("/api/v1/logs?limit=1").get_json()[0]
+    assert (event["ip"], event["transport_peer_ip"]) == ("203.0.113.8", "127.0.0.1")
+    conn = db.connect()
+    assert ledger.verify(conn).ok
+    with db.write() as write_conn:
+        write_conn.execute("UPDATE events SET transport_peer_ip='::1' WHERE id=?", (event["id"],))
+    assert not ledger.verify(conn).ok
+
+
+def test_v3_database_migrates_without_rewriting_legacy_ledger(isolated_config):
+    path = isolated_config.db_path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    old = {
+        "id": 1,
+        "ts_ms": 1,
+        "source": "old",
+        "event": "log_info",
+        "event_type": "application",
+        "severity": "low",
+        "ip": "192.0.2.10",
+        "user": "unknown",
+        "message": "legacy",
+        "log_format": "rfc3164",
+        "origin": "syslog",
+        "dropped": 0,
+    }
+    digest = ledger.payload_hash(old, ledger.chain.CANON_V2)
+    header = ledger.block_hash(1, 1, ledger.GENESIS_PREV, digest)
+    with sqlite3.connect(path) as legacy:
+        legacy.executescript((Path(__file__).parent / "fixtures" / "schema_v3.sql").read_text())
+        legacy.execute("INSERT INTO schema_meta VALUES ('schema_version', '3')")
+        legacy.execute(
+            """INSERT INTO events (id, ts_ms, ingested_ts_ms, source, event, event_type,
+               severity, ip, user, message, log_format, origin, rep_verdict,
+               rep_score, rep_sources, rep_checked, rep_detail, dropped)
+               VALUES (1,1,1,'old','log_info','application','low','192.0.2.10',
+               'unknown','legacy','rfc3164','syslog','unavailable',0,'[]',0,'',0)"""
+        )
+        legacy.execute(
+            """INSERT INTO ledger (block_id, ts_ms, event_id, payload_json,
+               payload_canon, log_hash, prev_hash, hash)
+               VALUES (1,1,1,?,?,?,?,?)""",
+            (
+                ledger.canonical(old, ledger.chain.CANON_V2),
+                ledger.chain.CANON_V2,
+                digest,
+                ledger.GENESIS_PREV,
+                header,
+            ),
+        )
+    db.configure(path)
+    conn = db.connect()
+    assert (
+        conn.execute("SELECT value FROM schema_meta WHERE key='schema_version'").fetchone()[0]
+        == "4"
+    )
+    assert repos.recent_events()[0]["transport_peer_ip"] is None
+    assert ledger.verify(conn).ok
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "Failed password for root from 999.1.2.3 port 22 ssh2",
+        "Failed password for root from 203.0.113.8 port 0 ssh2",
+        "Failed password for root from 203.0.113.8 port 22 ssh2 injected",
+        "pam_unix(sshd:auth): authentication failure; rhost=203.0.113.8",
+    ],
+)
+def test_trusted_local_malformed_auth_message_stays_generic(body):
+    raw = syslog_server.parse_syslog(
+        f"<34>Oct 11 22:14:15 ssh-box sshd[99]: {body}",
+        "127.0.0.1",
+        trusted_peers=("127.0.0.1",),
+    )
+    assert (raw["event"], raw["ip"]) == ("log_critical", "127.0.0.1")
+
+
+def test_trusted_local_failed_logins_raise_actor_alert_without_blocking_collector():
+    payload = "<34>Oct 11 22:14:15 ssh-box sshd[99]: Failed password for root from 203.0.113.8 port 22 ssh2"
+    for _ in range(9):
+        process_log(syslog_server.parse_syslog(payload, "127.0.0.1", trusted_peers=("127.0.0.1",)))
+    conn = db.connect()
+    assert repos.failed_logins_in_window(conn, "203.0.113.8", 0) >= 5
+    assert any(alert["ip"] == "203.0.113.8" for alert in repos.recent_alerts())
+    assert repos.blocked_entry(conn, "127.0.0.1") is None
+
+
+def test_invalid_user_and_failed_password_count_as_one_failed_attempt():
+    prefix = "<34>Oct 11 22:14:15 ssh-box sshd[99]: "
+    for body in (
+        "Invalid user root from 203.0.113.8",
+        "Failed password for invalid user root from 203.0.113.8 port 22 ssh2",
+    ):
+        process_log(
+            syslog_server.parse_syslog(prefix + body, "127.0.0.1", trusted_peers=("127.0.0.1",))
+        )
+    conn = db.connect()
+    assert repos.failed_logins_in_window(conn, "203.0.113.8", 0) == 1
 
 
 def test_unparseable_datagram_is_ingested_rather_than_dropped():

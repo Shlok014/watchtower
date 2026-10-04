@@ -89,6 +89,7 @@ def test_config_endpoint_reports_the_live_configuration(client):
     body = client.get(_url("/config")).get_json()
     assert body["retention_hours"] == 24
     assert body["configured_sources"] == ["synthetic"]
+    assert body["trusted_syslog_peers"] == []
     assert body["running_sources"] == []
 
 

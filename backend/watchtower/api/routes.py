@@ -520,6 +520,7 @@ def get_config():
             "retention_hours": cfg.retention_hours,
             "alert_threshold": cfg.alert_threshold,
             "configured_sources": list(cfg.sources),
+            "trusted_syslog_peers": list(cfg.trusted_syslog_peers),
             "running_sources": runtime.status(),
             "cors_origins": list(cfg.cors_origins),
             "ruleset_version": rules.ruleset_version(),

@@ -30,6 +30,7 @@ from datetime import UTC, datetime
 
 from .. import config
 from ..detect import stream
+from . import sshd
 from .base import ThreadedSource
 
 # 081109 203615 148 INFO dfs.DataNode$PacketResponder: PacketResponder 1 for ...
@@ -135,19 +136,12 @@ def parse_openssh(line: str) -> dict | None:
     # make every replayed line look like it happened today.
     ts = datetime(2016, month, int(g["day"]), hh, mm, ss, tzinfo=UTC)
     content = g["content"]
-    lowered = content.lower()
-    if (
-        "failed password" in lowered
-        or "invalid user" in lowered
-        or "authentication failure" in lowered
-    ):
-        event = "failed_login"
-    elif "accepted password" in lowered or "session opened" in lowered:
-        event = "login_success"
-    elif "break-in attempt" in lowered:
-        event = "log_warning"
-    else:
-        event = "log_info"
+    auth = sshd.parse(g["tag"], content)
+    event = (
+        auth[0]
+        if auth
+        else ("log_warning" if "break-in attempt" in content.lower() else "log_info")
+    )
     return {
         "timestamp": ts.isoformat(),
         "source": g["host"],
@@ -156,20 +150,12 @@ def parse_openssh(line: str) -> dict | None:
         # daemon's own account of itself. Nothing is inferred beyond that: the
         # match is on the literal message sshd emits.
         "event": event,
-        "ip": _first_ip(content, "127.0.0.1"),
-        "user": _openssh_user(content),
+        "ip": auth[1] if auth else "127.0.0.1",
+        "user": auth[2] if auth else "unknown",
         "message": content,
         "log_format": "rfc3164",
         "origin": "replay:openssh",
     }
-
-
-OPENSSH_USER = re.compile(r"(?:invalid user|user)\s+(\S+)", re.IGNORECASE)
-
-
-def _openssh_user(content: str) -> str:
-    m = OPENSSH_USER.search(content)
-    return m.group(1) if m else "unknown"
 
 
 DATASETS = {

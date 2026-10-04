@@ -38,7 +38,8 @@ from dataclasses import dataclass, field
 # to reproduce a single byte, and a digest you cannot reproduce is not evidence.
 CANON_V1 = "py-json-sortkeys-ensureascii-defaultsep-v1"
 CANON_V2 = "py-json-sortkeys-ensureascii-defaultsep-v2"
-PAYLOAD_CANON = CANON_V2
+CANON_V3 = "py-json-sortkeys-ensureascii-defaultsep-v3"
+PAYLOAD_CANON = CANON_V3
 
 # Pinned field tuples. Hashing the whole dict would break every historical
 # digest the moment a field is added to events — which is exactly what would
@@ -68,10 +69,11 @@ _V1_FIELDS = (
 # worth protecting. Left outside, flipping dropped 1 → 0 with raw SQL would
 # rewrite the enforcement history and `verify` would still report a clean chain.
 _V2_FIELDS = (*_V1_FIELDS, "dropped")
+_V3_FIELDS = (*_V2_FIELDS, "transport_peer_ip")
 
-CANON_FIELDS_BY_VERSION = {CANON_V1: _V1_FIELDS, CANON_V2: _V2_FIELDS}
+CANON_FIELDS_BY_VERSION = {CANON_V1: _V1_FIELDS, CANON_V2: _V2_FIELDS, CANON_V3: _V3_FIELDS}
 # Kept as the current tuple for callers that just want "the fields".
-CANON_FIELDS = _V2_FIELDS
+CANON_FIELDS = _V3_FIELDS
 
 GENESIS_PREV = "0" * 64
 
@@ -175,7 +177,8 @@ def verify(conn, page: int = 500) -> VerifyResult:
             """SELECT l.block_id, l.ts_ms, l.event_id, l.payload_json, l.payload_canon,
                       l.log_hash, l.prev_hash, l.hash,
                       e.id AS e_id, e.ts_ms AS e_ts_ms, e.source, e.event, e.event_type,
-                      e.severity, e.ip, e.user, e.message, e.log_format, e.origin, e.dropped
+                      e.severity, e.ip, e.transport_peer_ip, e.user, e.message,
+                      e.log_format, e.origin, e.dropped
                FROM ledger l
                LEFT JOIN events e ON e.id = l.event_id
                WHERE l.block_id > ?
@@ -219,6 +222,7 @@ def verify(conn, page: int = 500) -> VerifyResult:
                     "event_type": r["event_type"],
                     "severity": r["severity"],
                     "ip": r["ip"],
+                    "transport_peer_ip": r["transport_peer_ip"],
                     "user": r["user"],
                     "message": r["message"],
                     "log_format": r["log_format"],
