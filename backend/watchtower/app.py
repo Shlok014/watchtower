@@ -12,7 +12,7 @@ from flask_cors import CORS
 
 from . import access, config, runtime, threatintel
 from .api.routes import bp as api_bp
-from .detect import stream
+from .detect import live_shadow, stream
 from .soar import playbooks
 from .sources import synthetic
 from .store import db as store_db
@@ -83,6 +83,7 @@ def create_app(cfg: config.Config | None = None, start_sources: bool = True) -> 
     # forgotten — "no model" and "a model that silently failed to load" have to
     # be distinguishable from outside the process.
     stream.enable()
+    live_shadow.enable(cfg.models_dir)
     if start_sources:
         runtime.start(cfg.sources)
     return app

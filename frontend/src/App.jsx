@@ -165,6 +165,12 @@ export default function App() {
   const unblock = (ip) =>
     run('Unblock', () => api.unblock(ip), () => showToast(`🔓 ${ip} unblocked`, 'info'))
 
+  const reviewAlert = async (id, target, note) => {
+    const result = await api.reviewAlert(id, target, note)
+    await refresh()
+    return result
+  }
+
   const resetAll = () => {
     if (!confirm('⚠️ Delete every event, alert, ledger block, SOAR record and block? This cannot be undone.')) return
     // The message shown is the backend's, built from real row counts. The
@@ -215,7 +221,8 @@ export default function App() {
       <div className="grid-3 section-row investigation-row">
         <LogsPanel logs={logs} filters={filters} setFilters={setFilters}
                    sources={stats?.sources || []} dimmed={dimmed} filtered={filtered} />
-        <AlertsPanel alerts={alerts} dimmed={dimmed} />
+        <AlertsPanel alerts={alerts} dimmed={dimmed} canWrite={canWrite}
+                     onHistory={api.reviewHistory} onReview={reviewAlert} />
       </div>
 
       <div className="stats-grid">

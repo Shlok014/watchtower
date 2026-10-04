@@ -65,15 +65,6 @@ CREATE INDEX IF NOT EXISTS idx_events_severity ON events (severity);
 CREATE INDEX IF NOT EXISTS idx_events_origin ON events (origin);
 CREATE INDEX IF NOT EXISTS idx_events_dropped ON events (dropped);
 
--- One immutable, event-linked shadow verdict. It cannot create an alert and
--- disappears with its event when retention or reset removes that event.
-CREATE TABLE IF NOT EXISTS event_shadow_verdicts (
-    event_id       INTEGER PRIMARY KEY REFERENCES events(id) ON DELETE CASCADE,
-    status         TEXT NOT NULL CHECK (status IN ('scored','unavailable','skipped')),
-    profile_digest TEXT,
-    verdict_json   TEXT NOT NULL
-);
-
 -- ── alerts ───────────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS alerts (
     id              INTEGER PRIMARY KEY,
@@ -91,24 +82,10 @@ CREATE TABLE IF NOT EXISTS alerts (
     reasons_json    TEXT    NOT NULL,
     reputation_json TEXT    NOT NULL,
     -- Stays 'open'. A status is earned by an action that actually ran.
-    status          TEXT    NOT NULL CHECK (status IN ('open','contained','mitigated','action_failed','closed')),
-    review_status   TEXT    NOT NULL DEFAULT 'new'
-                    CHECK (review_status IN ('new','investigating','closed'))
+    status          TEXT    NOT NULL CHECK (status IN ('open','contained','mitigated','action_failed','closed'))
 );
 CREATE INDEX IF NOT EXISTS idx_alerts_ts ON alerts (ts_ms);
 CREATE INDEX IF NOT EXISTS idx_alerts_event ON alerts (event_id);
-
--- Analyst actions are distinct from the automated SOAR outcome above.
-CREATE TABLE IF NOT EXISTS alert_review_events (
-    id           INTEGER PRIMARY KEY,
-    alert_id     INTEGER NOT NULL REFERENCES alerts(id) ON DELETE CASCADE,
-    ts_ms        INTEGER NOT NULL,
-    from_status  TEXT NOT NULL,
-    to_status    TEXT NOT NULL,
-    note         TEXT NOT NULL CHECK (length(trim(note)) > 0),
-    actor        TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_alert_review_events_alert ON alert_review_events (alert_id, id);
 
 -- ── SOAR ─────────────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS soar_executions (

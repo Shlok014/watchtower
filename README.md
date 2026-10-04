@@ -12,7 +12,6 @@ React.
 [![License](https://img.shields.io/github/license/Shlok014/watchtower)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776ab.svg)](backend/requirements.txt)
 [![Node 22+](https://img.shields.io/badge/node-22%2B-5fa04e.svg)](frontend/package.json)
-[![Tests](https://img.shields.io/badge/tests-154%20backend%20%2B%2045%20frontend-34d399.svg)](#tests)
 
 [![CI](https://github.com/Shlok014/watchtower/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Shlok014/watchtower/actions/workflows/ci.yml)
 
@@ -46,6 +45,8 @@ flowchart LR
 
     BLK -->|yes| DROP["mark dropped<br/>count the hit"]
     BLK -->|no| DET["detection<br/>sliding-window rules"]
+    DET -.-> SHADOW["normal-only live profile<br/>shadow verdict, no alert"]
+    SHADOW --> DB
 
     DET --> ALERT{"score >= threshold?"}
     ALERT -->|yes| SOAR["SOAR playbook<br/>YAML policy"]
@@ -71,8 +72,9 @@ than an accident:
   the response actions is what makes it a loop rather than a log.
 * **The ledger chains events as they arrive** — before anything decides what
   they mean, and whether or not a response suppressed them.
-* **The trained model is off to one side.** It scores replayed HDFS blocks. The
-  dashboard's live detection is the rule engine, and the two are never conflated.
+* **The HDFS trained model is off to one side.** It scores replayed HDFS blocks.
+  The dashboard's live alerts come from rules; an optional separate live profile
+  records shadow verdicts but cannot raise alerts or run SOAR.
 
 ## Implemented capabilities
 
@@ -82,17 +84,40 @@ than an accident:
 | Normalization | Severity and event-type classification | ✅ real |
 | **IP reputation** | Live lookup against the **Tor Project bulk exit list** (1,380 entries) and **FireHOL level1** (4,580 CIDRs), cached locally with a provenance manifest. Every verdict names its feed and fetch date. Non-routable addresses short-circuit before the lookup. | ✅ **real, measured** |
 | Detection (live dashboard) | Sliding-window features (failed logins/60s, event rate/30s) + reputation, weighted. Deterministic: identical input and window state give an identical score. Versioned by the hash of the weights themselves. | ✅ real rules — **not** ML, and not called ML |
+| Live shadow profile | Offline-fitted normal-window envelope scores those live rule features and stores a separate event-linked verdict. Missing/corrupt profiles and blocked events have explicit states. It does not raise alerts; synthetic replay evidence is [reported separately](docs/METRICS.md#live-shadow-evaluation). | ✅ implemented, **shadow only** |
 | **Detection (model)** | **Drain3 template mining → per-block count vectors → scikit-learn**, persisted as a versioned artefact. The miner fits training blocks only; held-out lines can match but cannot create templates. `POST /api/v1/retrain` reports measured deltas. Live replay scores partial blocks and never borrows benchmark F1. | ✅ **real, measured, versioned** |
 | Alerting | Threshold 0.45, every alert carries the rules that fired and their evidence | ✅ real |
+| Analyst review | Owner-only `new → investigating → closed` workflow, with reasoned reopening and an append-only decision history. Review state does not change a block or SOAR outcome. | ✅ real |
 | **SOAR** | **A closed loop.** YAML playbooks; `block_ip` writes to a blocklist the consumer checks *before* detection, so a blocked address really is suppressed and the drops are counted. Webhooks POST for real. Incident reports are real files citing the ledger blocks that cover their evidence. Alert status is earned: `contained` / `action_failed`, never assumed. | ✅ **real** — enforcement is at the ingestion layer, not a firewall |
 | **Audit ledger** | **Tamper-evident.** Every digest is recomputed from the live event row on verify, and the header digest covers height, timestamp, prev_hash and payload — so editing an event, rewriting a block, back-dating one, or deleting one is all detected and distinguished. | ✅ **real** |
 | Telemetry | Measured: per-stage p50/p95 via `perf_counter`, real RSS, real CPU, real 60s-window throughput, real uptime | ✅ real, measured |
-| **Persistence** | **SQLite in WAL mode.** One transaction per event covers the row, its alert, and its ledger block. The SOAR response runs only after that transaction commits, in its own transactions, so a broken playbook or slow webhook cannot erase the recorded event. Survives restart. Events retained 24h unless an alert cites them; the ledger is append-only and exempt. | ✅ **real** |
-| **Dashboard** | React + Chart.js. **LIVE / STALE / OFFLINE derived from the age of the last successful poll**, stale panels dimmed and labelled, an offline banner, and empty states that distinguish "no data" from "no backend". 16 components, an API client that throws on `!res.ok`, 45 Vitest tests. | ✅ **real** |
+| **Persistence** | **SQLite in WAL mode.** One transaction per event covers the row, its alert, shadow verdict, and ledger block. The SOAR response runs after that transaction commits. Survives restart. Events retained 24h unless an alert cites them; the ledger is append-only and exempt. | ✅ **real** |
+| **Dashboard** | React + Chart.js. **LIVE / STALE / OFFLINE** follows the last successful poll. Rule, shadow, SOAR, and analyst review states are labelled separately; owner controls are disabled in read-only mode. | ✅ **real** |
 
-Live detection is an intentionally deterministic **rule engine**. Three
+Live alerting is an intentionally deterministic **rule engine**. Three
 sliding-window features and versioned weights make outcomes explainable and
-repeatable; the separate machine-learning pipeline is reserved for HDFS replay.
+repeatable. The normal-only live profile is an uncalibrated shadow signal;
+the separate machine-learning pipeline evaluates HDFS blocks.
+
+### Optional live shadow demo profile
+
+A fresh clone reports `profile_missing` for the shadow signal while rule alerts
+continue to work. To install the explicitly synthetic baseline for a local
+demo, run from `backend/`:
+
+```bash
+python -m eval.live --install-demo-profile
+# restart Watchtower to load data/models/live-profile.json
+```
+
+The command fits only the declared synthetic normal windows, writes a
+digest-checked profile, and prints its synthetic test report. It never promotes
+the profile to an alert trigger. The score is a robust deviation, not a
+probability of compromise. [The frozen evidence](docs/live-shadow-eval.json)
+includes a separate raw-event replay with benign bursts and low-and-slow misses;
+its labels come from the scenario generator, not real incident review. Do not
+use this demo profile to judge real traffic. `/api/v1/live-shadow/status` shows
+which profile, if any, the running process loaded.
 
 ## Ingestion sources
 
@@ -527,11 +552,11 @@ recomputes something — which is the whole point.
 ## Tests
 
 ```bash
-cd backend  && .venv/bin/python -m pytest    # 162
-cd frontend && npm test                      # 46
+cd backend  && .venv/bin/python -m pytest
+cd frontend && npm test
 ```
 
-162 backend tests covering the HTTP contract, the four ingestion sources (including a real
+Backend tests cover the HTTP contract, the four ingestion sources (including a real
 UDP datagram end to end, and a tailer surviving both rotation and in-place
 truncation), the SOAR closed loop (blocked address → zero further alerts, N real
 drops), playbook validation, a webhook against a real HTTP server and a closed
@@ -555,7 +580,7 @@ make dev       # API on :5001, dashboard on :5173
 
 | | |
 |---|---|
-| `make test` | 154 backend + 45 frontend |
+| `make test` | Backend and frontend suites |
 | `make lint` | ruff, eslint, and the honesty gate |
 | `make bench` | regenerate `docs/METRICS.md` from a real run |
 | `make demo` | verify the ledger, corrupt one event with raw SQL, verify again |

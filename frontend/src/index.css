@@ -334,6 +334,30 @@ td.mono { font-family: var(--font-mono); }
 .alert-actions { display: flex; flex-wrap: wrap; gap: 0.35rem; }
 .alert-action-tag { font-size: 0.68rem; padding: 0.18rem 0.55rem; border-radius: 100px; background: var(--cyan-dim); color: var(--cyan); font-weight: 500; }
 .soar-time-tag { font-size: 0.64rem; padding: 0.18rem 0.55rem; border-radius: 100px; background: var(--amber-dim); color: var(--amber); font-family: var(--font-mono); }
+.alert-shadow { margin: 0.25rem 0 0.5rem; }
+.shadow-verdict { display: inline-block; max-width: 100%; font-size: 0.68rem; color: var(--text-secondary); font-family: var(--font-mono); line-height: 1.45; overflow-wrap: anywhere; }
+.shadow-verdict.flagged { color: var(--amber); }
+.shadow-verdict.muted { color: var(--text-dim); }
+.alert-review { margin-top: 0.65rem; border-top: 1px solid var(--border); padding-top: 0.55rem; font-size: 0.72rem; color: var(--text-secondary); }
+.alert-review-summary { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; flex-wrap: wrap; }
+.alert-review-toggle { background: none; border: 0; color: var(--cyan); padding: 0.3rem 0; cursor: pointer; font: inherit; }
+.alert-review-toggle:hover { text-decoration: underline; }
+.alert-review-toggle:disabled { opacity: 0.55; cursor: wait; }
+.alert-review-toggle:focus-visible, .alert-review-error button:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+.alert-review-detail { padding-top: 0.45rem; overflow-wrap: anywhere; }
+.alert-review-context, .alert-review-empty, .alert-review-readonly { color: var(--text-dim); margin: 0.25rem 0 0.5rem; line-height: 1.5; }
+.alert-review-history { list-style: none; padding: 0; margin: 0.5rem 0; border-left: 1px solid var(--border); }
+.alert-review-history li { padding: 0.35rem 0 0.35rem 0.65rem; }
+.alert-review-history li span { color: var(--text-dim); font-family: var(--font-mono); font-size: 0.65rem; }
+.alert-review-history li p { margin: 0.2rem 0 0; }
+.alert-review-form { display: flex; flex-direction: column; align-items: flex-start; gap: 0.35rem; margin-top: 0.65rem; }
+.alert-review-form label { font-weight: 650; }
+.alert-review-form textarea { width: 100%; min-height: 3.5rem; resize: vertical; padding: 0.45rem; background: var(--bg-secondary); color: var(--text-primary); border: 1px solid var(--border); border-radius: 4px; font: inherit; }
+.alert-review-form textarea:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+.alert-review-form textarea:disabled { opacity: 0.55; }
+.alert-review-error { color: var(--red); margin: 0.4rem 0; }
+.alert-review-error button { background: none; border: 0; color: inherit; text-decoration: underline; cursor: pointer; font: inherit; }
+@media (max-width: 640px) { .alert-card-header { align-items: flex-start; gap: 0.4rem; flex-wrap: wrap; } .alert-features { flex-wrap: wrap; } .alert-review-form .btn { min-height: 2.5rem; } }
 
 /* ─── SOAR ──────────────────────────────────────────────────────────────────── */
 .soar-list { max-height: 380px; overflow-y: auto; display: flex; flex-direction: column; gap: 0.4rem; }

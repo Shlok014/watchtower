@@ -1,5 +1,7 @@
 import { BellRing } from 'lucide-react'
 import { Panel, EmptyState } from './Panel'
+import { AlertReview } from './AlertReview'
+import { ShadowVerdict } from './ShadowVerdict'
 
 const STATUS_LABEL = {
   open: 'open — no action has run',
@@ -8,7 +10,7 @@ const STATUS_LABEL = {
   action_failed: 'action failed — a required step did not succeed',
 }
 
-export function AlertsPanel({ alerts, dimmed }) {
+export function AlertsPanel({ alerts, dimmed, canWrite = false, onHistory, onReview }) {
   return (
     <Panel icon={BellRing} title="Threat Alerts" dimmed={dimmed}
            badge={`${alerts.length} shown`} badgeColor="red">
@@ -23,7 +25,7 @@ export function AlertsPanel({ alerts, dimmed }) {
                 ⚠ {a.event?.replace(/_/g, ' ')}
               </span>
               <span className="alert-score">
-                Score: {a.anomaly_score}
+                Rule score: {a.anomaly_score}
                 {/* The threshold this alert was actually judged against, stored
                     with it. This printed a hardcoded 0.45 because the API never
                     sent one — so it would have gone on saying 0.45 after anyone
@@ -37,6 +39,7 @@ export function AlertsPanel({ alerts, dimmed }) {
             </div>
             <div className="alert-explanation">{a.explanation}</div>
             <div className="alert-meta">{a.ip} • {a.source} • {a.user} • {a.ruleset_version}</div>
+            <div className="alert-shadow"><ShadowVerdict verdict={a.shadow_verdict} /></div>
             {a.features && (
               <div className="alert-features">
                 <span className="feature-tag">Failed:{a.features.failed_attempts_count}</span>
@@ -58,6 +61,7 @@ export function AlertsPanel({ alerts, dimmed }) {
                 </span>
               </div>
             )}
+            <AlertReview alert={a} canWrite={canWrite} onHistory={onHistory} onReview={onReview} />
           </div>
         ))}
       </div>
