@@ -249,7 +249,7 @@ def test_v3_database_migrates_without_rewriting_legacy_ledger(isolated_config):
     conn = db.connect()
     assert (
         conn.execute("SELECT value FROM schema_meta WHERE key='schema_version'").fetchone()[0]
-        == "4"
+        == "5"
     )
     assert repos.recent_events()[0]["transport_peer_ip"] is None
     assert ledger.verify(conn).ok

@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from watchtower import config
 from watchtower.app import API_PREFIX, create_app
 from watchtower.detect import live_profile
+from watchtower.pipeline import consumer
 from watchtower.pipeline.consumer import process_log
 from watchtower.store import db, repos
 
@@ -113,3 +114,36 @@ def test_reset_deletes_shadow_verdicts_with_events():
     with db.write() as conn:
         repos.reset_all(conn)
     assert db.connect().execute("SELECT count(*) FROM event_shadow_verdicts").fetchone()[0] == 0
+
+
+def test_repeated_rule_alerts_are_cooled_down_across_restart(monkeypatch):
+    create_app(start_sources=False)
+    clock = [1_800_000_000_000]
+    monkeypatch.setattr(repos, "now_ms", lambda: clock[0])
+    monkeypatch.setattr(consumer, "run_response", lambda alert: None)
+    for _ in range(4):
+        process_log(_raw(event="brute_force"))
+    assert repos.counters()["events"] == 4
+    assert repos.counters()["alerts"] == 1
+    assert db.connect().execute("SELECT count(*) FROM ledger").fetchone()[0] == 4
+
+    db.close_all()
+    db.configure(None)
+    clock[0] += 30_000
+    process_log(_raw(event="brute_force"))
+    assert repos.counters()["alerts"] == 1
+
+    clock[0] += 31_000
+    process_log(_raw(event="brute_force"))
+    assert repos.counters()["alerts"] == 2
+
+
+def test_new_event_type_can_alert_during_another_types_cooldown(monkeypatch):
+    create_app(start_sources=False)
+    monkeypatch.setattr(consumer, "run_response", lambda alert: None)
+    process_log(_raw(event="brute_force"))
+    process_log(_raw(event="malware_detected"))
+    assert [alert["event"] for alert in repos.recent_alerts()] == [
+        "malware_detected",
+        "brute_force",
+    ]

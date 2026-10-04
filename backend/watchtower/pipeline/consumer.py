@@ -197,7 +197,13 @@ def process_log(raw_log: dict) -> dict:
             # This does no file IO or fitting and cannot trigger an alert.
             shadow_verdict = live_shadow.verdict(detection["features"])
 
-            if detection["is_anomaly"]:
+            if detection["is_anomaly"] and not repos.alert_within_cooldown(
+                conn,
+                normalized["ip"],
+                normalized["event"],
+                detection["ruleset_version"],
+                ingested_ts_ms - rules.ALERT_COOLDOWN_S * 1000,
+            ):
                 t0 = time.perf_counter()
                 alert = create_alert(conn, normalized, detection, event_id)
                 telemetry.record("alert", time.perf_counter() - t0)

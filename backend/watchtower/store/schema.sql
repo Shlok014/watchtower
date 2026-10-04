@@ -99,6 +99,14 @@ CREATE TABLE IF NOT EXISTS alerts (
 );
 CREATE INDEX IF NOT EXISTS idx_alerts_ts ON alerts (ts_ms);
 CREATE INDEX IF NOT EXISTS idx_alerts_event ON alerts (event_id);
+CREATE INDEX IF NOT EXISTS idx_alerts_cooldown ON alerts (ip, event, ruleset_version, event_id);
+
+-- An explicit unblock opens a fresh alert epoch for that address. The alert ID
+-- boundary works even when unblock and the next event share a millisecond.
+CREATE TABLE IF NOT EXISTS alert_cooldown_resets (
+    ip       TEXT PRIMARY KEY,
+    alert_id INTEGER NOT NULL
+);
 
 -- Analyst actions are distinct from the automated SOAR outcome above.
 CREATE TABLE IF NOT EXISTS alert_review_events (

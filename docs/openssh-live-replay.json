@@ -1,0 +1,40 @@
+{
+  "alerted_ip_set_sha256": "0f743cfad443fda0fe757a486b32983419f2dd52b9fd7cdcc32452a5009fa70a",
+  "event_counts": {
+    "auth_invalid_user": 112,
+    "failed_login": 517,
+    "log_info": 1285,
+    "log_warning": 85,
+    "login_success": 1
+  },
+  "incident_ground_truth": false,
+  "limits": [
+    "No independent incident labels; precision, recall, and false-alarm rate cannot be estimated.",
+    "The 2k sample is a fixed excerpt, not a live traffic distribution.",
+    "Compressed message-repeated lines remain generic and are not expanded into attempts.",
+    "SOAR and threat feeds are disabled to isolate live rule behavior."
+  ],
+  "parsed_events": 2000,
+  "protocol": "openssh_2k_alert_cooldown_comparison_v1",
+  "replay_clock": "original_log_intervals",
+  "response_actions": "disabled_for_replay",
+  "ruleset_version": "rules-8285c88f",
+  "source": {
+    "lines": 2000,
+    "name": "Loghub OpenSSH_2k.log",
+    "sha256": "1e4912727fa88245113d41b16a0cd25ceadba7f931e1c406542885b91254264f"
+  },
+  "threat_feeds": "disabled_for_replay",
+  "unique_auth_ips": 25,
+  "unparsed_lines": 0,
+  "with_cooldown": {
+    "alerted_ips": 5,
+    "alerts": 26,
+    "policy": "60s_per_ip_event_type"
+  },
+  "without_cooldown": {
+    "alerted_ips": 5,
+    "alerts": 426,
+    "policy": "disabled_counterfactual"
+  }
+}

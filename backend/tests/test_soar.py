@@ -154,6 +154,8 @@ def test_unblock_restores_traffic():
     process_log(_raw())
     with db.write() as w:
         assert repos.unblock(w, ATTACKER) is True
+    db.close_all()
+    db.configure(None)
     process_log(_raw())
     assert repos.counters()["alerts"] == 2
 
