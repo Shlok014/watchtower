@@ -26,8 +26,10 @@ import os
 import time
 import urllib.error
 import urllib.request
+from contextlib import suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from pathlib import Path
 
 from .. import config
 from ..store import repos
@@ -161,11 +163,6 @@ def incident_report(ctx: Context) -> Outcome:
     except OSError as exc:
         return Outcome(FAILED, f"cannot create {directory}: {exc}")
 
-    day = datetime.now(UTC).strftime("%Y%m%d")
-    existing = sorted(directory.glob(f"INC-{day}-*.json"))
-    seq = len(existing) + 1
-    ident = f"INC-{day}-{seq:03d}"
-
     alert = ctx.alert
     ip = alert.get("ip", "")
     triggering_event = repos.event_for_alert(ctx.conn, alert["id"])
@@ -189,7 +186,6 @@ def incident_report(ctx: Context) -> Outcome:
     heights = repos.ledger_heights_for_events(ctx.conn, event_ids) if event_ids else []
 
     record = {
-        "id": ident,
         "opened_at": datetime.now(UTC).isoformat(),
         "alert_id": alert.get("id"),
         "event": alert.get("event"),
@@ -207,17 +203,63 @@ def incident_report(ctx: Context) -> Outcome:
     }
 
     try:
-        (directory / f"{ident}.json").write_text(json.dumps(record, indent=2))
-        (directory / f"{ident}.md").write_text(_incident_markdown(record, evidence))
+        ident, markdown_path = _write_incident_files(directory, record, evidence)
     except OSError as exc:
-        return Outcome(FAILED, f"could not write {ident}: {exc}")
+        return Outcome(FAILED, f"could not write incident report: {exc}")
 
     return Outcome(
         EXECUTED,
         f"wrote {ident}.md and {ident}.json ({len(event_ids)} evidence events, "
         f"{len(heights)} covering ledger blocks)",
-        data={"incident_id": ident, "path": str(directory / f"{ident}.md")},
+        data={"incident_id": ident, "path": str(markdown_path)},
     )
+
+
+def _write_incident_files(directory: Path, record: dict, evidence: list) -> tuple[str, Path]:
+    """Claim both report names without replacing another writer's evidence."""
+    day = datetime.now(UTC).strftime("%Y%m%d")
+    seq = len(list(directory.glob(f"INC-{day}-*.json"))) + 1
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+    while True:
+        ident = f"INC-{day}-{seq:03d}"
+        json_path = directory / f"{ident}.json"
+        markdown_path = directory / f"{ident}.md"
+        record["id"] = ident
+        json_text = json.dumps(record, indent=2)
+        markdown_text = _incident_markdown(record, evidence)
+
+        try:
+            json_fd = os.open(json_path, flags, 0o600)
+        except FileExistsError:
+            seq += 1
+            continue
+        try:
+            markdown_fd = os.open(markdown_path, flags, 0o600)
+        except OSError as exc:
+            os.close(json_fd)
+            json_path.unlink()
+            if isinstance(exc, FileExistsError):
+                seq += 1
+                continue
+            raise
+
+        try:
+            # Each descriptor belongs to this writer's exclusive filename.
+            with os.fdopen(markdown_fd, "w", encoding="utf-8") as output:
+                output.write(markdown_text)
+            with os.fdopen(json_fd, "w", encoding="utf-8") as output:
+                output.write(json_text)
+        except OSError:
+            with suppress(OSError):
+                os.close(markdown_fd)
+            with suppress(OSError):
+                os.close(json_fd)
+            with suppress(OSError):
+                markdown_path.unlink()
+            with suppress(OSError):
+                json_path.unlink()
+            raise
+        return ident, markdown_path
 
 
 def _incident_markdown(r: dict, evidence: list) -> str:

@@ -12,8 +12,10 @@ alongside it will fail.
 
 import http.server
 import json
+import stat
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 
 import pytest
@@ -315,6 +317,62 @@ def test_incident_report_ids_increment_within_a_day():
     reports = sorted(p.name for p in config.get().incidents_dir.glob("INC-*.md"))
     assert len(reports) == 2
     assert reports[0].endswith("-001.md") and reports[1].endswith("-002.md")
+
+
+def test_concurrent_incident_reports_do_not_overwrite_each_other(isolated_config, monkeypatch):
+    original = repos.event_for_alert
+    both_past_id_selection = threading.Barrier(2)
+
+    def synchronized_lookup(conn, alert_id):
+        both_past_id_selection.wait(timeout=5)
+        return original(conn, alert_id)
+
+    monkeypatch.setattr(repos, "event_for_alert", synchronized_lookup)
+
+    def write_report(alert_id):
+        alert = {
+            "id": alert_id,
+            "ip": f"203.0.113.{alert_id}",
+            "event": "brute_force",
+            "source": "test",
+            "user": "alice",
+            "severity": "high",
+            "anomaly_score": 0.5,
+            "explanation": "test alert",
+            "ruleset_version": "test",
+        }
+        return actions.incident_report(actions.Context(db.connect(), alert, {}))
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        outcomes = list(pool.map(write_report, (101, 102)))
+
+    reports = list(isolated_config.incidents_dir.glob("INC-*.json"))
+    markdown = list(isolated_config.incidents_dir.glob("INC-*.md"))
+    assert all(out.status == actions.EXECUTED for out in outcomes)
+    assert len(reports) == len(markdown) == 2
+    assert {json.loads(path.read_text())["alert_id"] for path in reports} == {101, 102}
+    assert {out.data["incident_id"] for out in outcomes} == {path.stem for path in reports}
+
+
+def test_incident_report_does_not_replace_orphaned_markdown(isolated_config):
+    directory = isolated_config.incidents_dir
+    directory.mkdir(parents=True)
+    day = datetime.now(UTC).strftime("%Y%m%d")
+    orphan = directory / f"INC-{day}-001.md"
+    orphan.write_text("previous incomplete report")
+
+    process_log(_raw())
+
+    assert orphan.read_text() == "previous incomplete report"
+    assert (directory / f"INC-{day}-002.md").exists()
+    assert (directory / f"INC-{day}-002.json").exists()
+
+
+def test_incident_reports_are_private_files(isolated_config):
+    process_log(_raw())
+    files = list(isolated_config.incidents_dir.glob("INC-*"))
+    assert len(files) == 2
+    assert {stat.S_IMODE(path.stat().st_mode) for path in files} == {0o600}
 
 
 # ─── playbooks as data ───────────────────────────────────────────────────────
