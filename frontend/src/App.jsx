@@ -6,6 +6,7 @@ import { LIVE, OFFLINE, usePolling } from './hooks/usePolling'
 
 import { AlertDistChart, EventDistChart, TimelineChart } from './components/charts'
 import { AlertsPanel } from './components/AlertsPanel'
+import { AccessBanner } from './components/AccessBanner'
 import { BlocklistPanel } from './components/BlocklistPanel'
 import { ConnectionBanner } from './components/ConnectionBanner'
 import { ConnectionGate } from './components/ConnectionGate'
@@ -28,7 +29,7 @@ export default function App() {
 
   const [data, setData] = useState({
     stats: null, logs: [], alerts: [], soar: [], ledger: [], health: null,
-    blocklist: null, model: null,
+    blocklist: null, model: null, access: null,
   })
   const [filters, setFilters] = useState({ search: '', severity: '', source: '' })
   const [toast, setToast] = useState(null)
@@ -95,11 +96,11 @@ export default function App() {
     // trouble and the whole snapshot is suspect. Merging a fresh half with a
     // stale half would produce a screen that is internally inconsistent and
     // says nothing about it.
-    const [stats, logs, alerts, soar, ledger, health, blocklist, model] = await Promise.all([
+    const [stats, logs, alerts, soar, ledger, health, blocklist, model, access] = await Promise.all([
       api.stats(), api.logs(params), api.alerts(40), api.soarActions(25),
-      api.ledger(20), api.health(), api.blocklist(), api.model(),
+      api.ledger(20), api.health(), api.blocklist(), api.model(), api.access(),
     ])
-    setData({ stats, logs, alerts, soar, ledger, health, blocklist, model })
+    setData({ stats, logs, alerts, soar, ledger, health, blocklist, model, access })
   }, [])
 
   // Polling does not start until the gate has opened. Before this the hook was
@@ -188,8 +189,9 @@ export default function App() {
     )
   }
 
-  const { stats, logs, alerts, soar, ledger, health, blocklist, model } = data
+  const { stats, logs, alerts, soar, ledger, health, blocklist, model, access } = data
   const dimmed = status !== LIVE
+  const canWrite = status === LIVE && access?.can_write === true
   const filtered = Boolean(filters.search || filters.severity || filters.source)
 
   return (
@@ -201,9 +203,11 @@ export default function App() {
         onAttack={simulateAttack}
         onReset={resetAll}
         busy={Boolean(busy)}
+        canWrite={canWrite}
       />
 
       <ConnectionBanner status={status} ageSeconds={ageSeconds} error={error} onRetry={refresh} />
+      <AccessBanner canWrite={status === LIVE ? access?.can_write : null} />
 
       <PipelineBar stats={stats} health={health} />
       <HealthPanel health={health} dimmed={dimmed} />
@@ -257,11 +261,11 @@ export default function App() {
 
       <div className="grid-2 section-row">
         <SOARPanel actions={soar} dimmed={dimmed} />
-        <BlocklistPanel blocklist={blocklist} onUnblock={unblock} dimmed={dimmed} />
+        <BlocklistPanel blocklist={blocklist} onUnblock={unblock} dimmed={dimmed} canWrite={canWrite} />
       </div>
 
       <div className="grid-2 section-row">
-        <ModelPanel model={model} onRetrain={retrain} retraining={busy === 'Retrain'} dimmed={dimmed} />
+        <ModelPanel model={model} onRetrain={retrain} retraining={busy === 'Retrain'} dimmed={dimmed} canWrite={canWrite} />
         <LedgerPanel blocks={ledger} onVerify={verifyChain} result={chainResult}
                      verifying={busy === 'Verify chain'} dimmed={dimmed} />
       </div>

@@ -231,8 +231,13 @@ def _jsonable(value):
     return str(value)
 
 
-def latest_entry() -> dict | None:
+def latest_entry(dataset_key: str | None = None) -> dict | None:
     versions = load_manifest()["versions"]
+    if dataset_key is not None:
+        versions = [v for v in versions if v.get("dataset", {}).get("key") == dataset_key]
+    elif any(v.get("dataset", {}).get("key") == "full" for v in versions):
+        # A sample smoke benchmark must not displace a full benchmark model.
+        versions = [v for v in versions if v.get("dataset", {}).get("key") == "full"]
     return max(versions, key=lambda v: v["version"]) if versions else None
 
 

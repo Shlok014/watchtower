@@ -10,7 +10,7 @@ const ATTACKS = [
   ['mixed', Crosshair, 'Multi-Vector'],
 ]
 
-export function Header({ status, ageSeconds, rulesetVersion, onAttack, onReset, busy }) {
+export function Header({ status, ageSeconds, rulesetVersion, onAttack, onReset, busy, canWrite = true }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef(null)
 
@@ -46,11 +46,11 @@ export function Header({ status, ageSeconds, rulesetVersion, onAttack, onReset, 
         {/* Was the string literal "LIVE", always. */}
         <ConnectionPill status={status} ageSeconds={ageSeconds} />
         <div className="attack-dropdown" ref={menuRef}>
-          <button className="btn btn-attack" onClick={() => setMenuOpen((o) => !o)} disabled={busy}
+          <button className="btn btn-attack" onClick={() => setMenuOpen((o) => !o)} disabled={busy || !canWrite}
                   aria-haspopup="menu" aria-expanded={menuOpen} aria-controls="attack-menu">
             <Zap size={15} strokeWidth={1.8} /> Simulate Attack
           </button>
-          {menuOpen && (
+          {menuOpen && canWrite && (
             <div id="attack-menu" className="attack-menu" role="menu" aria-label="Attack simulation menu">
               {ATTACKS.map(([type, Icon, label]) => (
                 <button key={type} role="menuitem" onClick={() => { setMenuOpen(false); onAttack(type) }}>
@@ -60,7 +60,7 @@ export function Header({ status, ageSeconds, rulesetVersion, onAttack, onReset, 
             </div>
           )}
         </div>
-        <button className="btn btn-reset" onClick={onReset} disabled={busy}>
+        <button className="btn btn-reset" onClick={onReset} disabled={busy || !canWrite}>
           <Trash2 size={15} strokeWidth={1.8} /> Reset All
         </button>
       </div>

@@ -19,9 +19,12 @@ def isolated_config(tmp_path, monkeypatch):
     """Point every configured path at a per-test tmp dir."""
     monkeypatch.delenv("WATCHTOWER_DB", raising=False)
     monkeypatch.delenv("WATCHTOWER_DATA_DIR", raising=False)
+    monkeypatch.delenv("WATCHTOWER_WRITE_TOKEN", raising=False)
+    monkeypatch.delenv("WATCHTOWER_ALLOW_LOCAL_WRITES", raising=False)
     cfg = config.from_env()
     config.set_config(cfg)
-    config.replace(data_dir=tmp_path / "data")
+    # Existing write-path tests exercise the explicit local development mode.
+    config.replace(data_dir=tmp_path / "data", allow_local_writes=True)
     db.configure(None)
     yield config.get()
     db.close_all()

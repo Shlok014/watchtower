@@ -119,8 +119,12 @@ def _closes(playbook) -> bool:
     return any(s.required and s.action in ENFORCING_ACTIONS for s in playbook.steps)
 
 
-def describe() -> list[dict]:
-    """Every loaded playbook, for the API. Policy should be inspectable."""
+def describe(*, include_params: bool = False) -> list[dict]:
+    """Describe policy without publishing operator-supplied step parameters.
+
+    A webhook URL may itself be a credential. Only an authorized owner may
+    inspect raw parameters; anonymous readers still see the response flow.
+    """
     return [
         {
             "name": pb.name,
@@ -128,7 +132,12 @@ def describe() -> list[dict]:
             "priority": pb.priority,
             "source": pb.source,
             "steps": [
-                {"action": s.action, "required": s.required, "params": s.params} for s in pb.steps
+                {
+                    "action": s.action,
+                    "required": s.required,
+                    "params": s.params if include_params else {},
+                }
+                for s in pb.steps
             ],
         }
         for pb in playbooks_mod.all_playbooks().values()

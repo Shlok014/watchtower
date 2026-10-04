@@ -267,7 +267,10 @@ def _soar_rows(conn, sql: str, params) -> list[dict]:
                 "executed": bool(s["executed"]),
                 "required": bool(s["required"]),
                 "duration_us": s["duration_us"],
-                "detail": s["detail"],
+                # Older databases stored full credential-bearing webhook URLs
+                # in detail. The stored text is untrusted even if it does not
+                # resemble an HTTP URL, so only return the recorded status.
+                "detail": (f"webhook {s['status']}" if s["action"] == "webhook" else s["detail"]),
             }
         )
     return [

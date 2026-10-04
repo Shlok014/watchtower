@@ -29,7 +29,7 @@ from collections import OrderedDict
 import numpy as np
 
 from . import model as model_mod
-from .features import BLK, HEAD
+from .features import BLK, HEAD, file_sha256
 
 DEFAULT_MAX_BLOCKS = 20_000
 DEFAULT_RING = 200
@@ -180,7 +180,7 @@ def load_error() -> str | None:
 def enable(max_blocks: int = DEFAULT_MAX_BLOCKS) -> BlockScorer | None:
     """Load the newest model and start scoring. Returns None if there is none."""
     global _scorer, _load_error
-    from .parser import LogParser
+    from .parser import LogParser, state_path
 
     try:
         bundle = model_mod.load_latest()
@@ -188,10 +188,22 @@ def enable(max_blocks: int = DEFAULT_MAX_BLOCKS) -> BlockScorer | None:
         _load_error = str(exc)
         _scorer = None
         return None
+    dataset = bundle.meta.get("dataset", {})
+    expected = dataset.get("miner_sha256")
+    miner_stream = dataset.get("miner_stream")
+    parser_state = state_path(miner_stream) if miner_stream else None
+    if not expected or parser_state is None or not parser_state.is_file():
+        _load_error = "model has no verified miner state; retrain before live scoring"
+        _scorer = None
+        return None
+    if file_sha256(parser_state) != expected:
+        _load_error = "model and miner state do not match; retrain before live scoring"
+        _scorer = None
+        return None
     # The same miner state the model's columns were mined from. A fresh miner
     # would match nothing and every score would be the model's answer to an
     # all-zero vector — a constant, delivered with a straight face.
-    parser = LogParser(stream="hdfs", persist=True)
+    parser = LogParser(stream=miner_stream, persist=True)
     _scorer = BlockScorer(bundle, parser, max_blocks=max_blocks)
     _load_error = None
     return _scorer

@@ -7,10 +7,10 @@ generator and set the uptime clock only under ``python app.py``, so under
 and uptime read 0 forever. Every entry point now goes through ``create_app``.
 """
 
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
 from flask_cors import CORS
 
-from . import config, runtime, threatintel
+from . import access, config, runtime, threatintel
 from .api.routes import bp as api_bp
 from .detect import stream
 from .soar import playbooks
@@ -26,11 +26,32 @@ def create_app(cfg: config.Config | None = None, start_sources: bool = True) -> 
     cfg = config.get()
 
     app = Flask(__name__)
+    app.config["TRUSTED_HOSTS"] = list(cfg.trusted_hosts)
 
-    # Not `CORS(app)`. Wide-open was the previous setting, on an unauthenticated
-    # API that includes a destructive POST /reset — any page open in the browser
-    # could have emptied the store.
+    # CORS is for response access. The request-provenance guard below protects
+    # the write itself, including a plain cross-site HTML form POST.
     CORS(app, origins=list(cfg.cors_origins))
+
+    @app.before_request
+    def _protect_unsafe_requests():
+        # CORS only limits who can read a response. A cross-site HTML form can
+        # still submit POST /reset, /retrain, or /simulate-attack and the route
+        # would run. Check browser provenance before any write reaches a view.
+        if request.method in {"GET", "HEAD", "OPTIONS"}:
+            return None
+        origin = request.headers.get("Origin")
+        allowed = {*cfg.cors_origins, request.host_url.rstrip("/")}
+        if (origin and origin not in allowed) or (
+            not origin and request.headers.get("Sec-Fetch-Site") == "cross-site"
+        ):
+            return jsonify({"error": "cross_site_write_forbidden"}), 403
+        # Ledger validation computes a read-only verdict despite its legacy POST
+        # route. Every actual state-changing endpoint needs owner access.
+        if request.path == f"{API_PREFIX}/blockchain/validate" and request.method == "POST":
+            return None
+        if not access.can_write(cfg, request):
+            return jsonify({"error": "write_forbidden"}), 403
+        return None
 
     app.register_blueprint(api_bp, url_prefix=API_PREFIX)
 
