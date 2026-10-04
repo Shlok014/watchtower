@@ -19,6 +19,7 @@ from watchtower import config, ledger, runtime
 from watchtower.app import create_app
 from watchtower.pipeline.consumer import process_log
 from watchtower.sources import file_tailer, replay, syslog_server
+from watchtower.sources.base import ThreadedSource
 from watchtower.store import db, repos
 
 # ─── replay ───────────────────────────────────────────────────────────────────
@@ -31,6 +32,51 @@ HDFS_WITH_IP = (
     "081109 204005 35 INFO dfs.FSNamesystem: BLOCK* NameSystem.addStoredBlock: "
     "blockMap updated: 10.251.73.220:50010 is added to blk_7128370237687728475 size 67108864"
 )
+
+
+def test_unexpected_clean_exit_of_continuous_source_is_a_health_failure(monkeypatch):
+    class ReturningSource(ThreadedSource):
+        name = "syslog-test"
+
+        def run(self, emit):
+            return None
+
+    source = ReturningSource()
+    source.start(lambda event: None).join(timeout=1)
+    monkeypatch.setattr(runtime, "_sources", {"syslog:5514": source})
+    assert not source.completed
+    assert runtime.dead() == ["syslog:5514"]
+    assert runtime.finished() == []
+
+
+def test_finite_source_clean_exit_is_reported_as_completed(monkeypatch):
+    class ReturningReplay(ThreadedSource):
+        name = "replay-test"
+        finite = True
+
+        def run(self, emit):
+            return None
+
+    source = ReturningReplay()
+    source.start(lambda event: None).join(timeout=1)
+    monkeypatch.setattr(runtime, "_sources", {"replay:test": source})
+    assert source.completed
+    assert runtime.finished() == ["replay:test"]
+    assert runtime.dead() == []
+
+
+def test_stopped_finite_source_is_not_reported_as_completed():
+    class StoppedReplay(ThreadedSource):
+        finite = True
+
+        def run(self, emit):
+            self._stop.wait(timeout=1)
+
+    source = StoppedReplay()
+    source.start(lambda event: None)
+    source.stop()
+    source._thread.join(timeout=1)
+    assert not source.completed
 
 
 def test_replay_keeps_the_logs_own_timestamp():

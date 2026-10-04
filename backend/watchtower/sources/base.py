@@ -60,8 +60,9 @@ class ThreadedSource:
     def _guarded_run(self, emit) -> None:
         try:
             self.run(emit)
-            # Returned without raising: the work is done, not broken.
-            self.completed = True
+            # Only finite work can complete. An endless listener that returns
+            # unexpectedly is dead, even when it did not raise an exception.
+            self.completed = bool(self.finite and not self.stopping)
         except Exception as exc:
             # A source that dies must say so. The old generator loop swallowed
             # everything, so a persistent failure looked exactly like a quiet
