@@ -25,7 +25,12 @@ bp = Blueprint("api", __name__)
 @bp.route("/access", methods=["GET"])
 def write_access():
     """Tell this client whether owner-only controls can be used right now."""
-    return jsonify({"can_write": access.can_write(config.get(), request)})
+    return jsonify(
+        {
+            "can_write": access.can_write(config.get(), request),
+            "can_read": access.can_read(config.get(), request, repos.has_real_origin()),
+        }
+    )
 
 
 def query_int(name: str, default: int, lo: int, hi: int) -> int:

@@ -16,6 +16,7 @@ from .detect import live_shadow, stream
 from .soar import playbooks
 from .sources import synthetic
 from .store import db as store_db
+from .store import repos
 
 API_PREFIX = "/api/v1"
 
@@ -34,6 +35,12 @@ def create_app(cfg: config.Config | None = None, start_sources: bool = True) -> 
 
     @app.before_request
     def _protect_unsafe_requests():
+        if request.path.startswith(f"{API_PREFIX}/") and request.path != f"{API_PREFIX}/access":
+            sensitive_read = request.method in {"GET", "HEAD"} or (
+                request.path == f"{API_PREFIX}/blockchain/validate" and request.method == "POST"
+            )
+            if sensitive_read and not access.can_read(cfg, request, repos.has_real_origin()):
+                return jsonify({"error": "read_forbidden"}), 403
         # CORS only limits who can read a response. A cross-site HTML form can
         # still submit POST /reset, /retrain, or /simulate-attack and the route
         # would run. Check browser provenance before any write reaches a view.
