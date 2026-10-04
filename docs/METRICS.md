@@ -2,20 +2,27 @@
 
 ## Independently labeled auth-log replay
 
-`python scripts/check_ait_auth_evidence.py --fetch` downloads two pinned files
-from the official AIT archive by byte range into ignored local data, then
+`python scripts/check_ait_auth_evidence.py --fetch` downloads four pinned files
+from the two official AIT scenario archives by byte range into ignored local data, then
 replays them and compares [the frozen evidence](ait-auth-eval.json). No AIT raw
 logs or label files are committed to this repository.
 
 <!-- ait-auth-metrics:start -->
-| Source slice | Parsed lines | Publisher-labeled attack lines | Alerted lines | TP | FP | FN | TN |
+| AIT-LDS v2.1 scenario | Parsed lines | Publisher-labeled attack lines | Alerted lines | TP | FP | FN | TN |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| AIT-LDS v2.1 `russellmitchell/intranet_server/auth.log` | 272 | 8 | 0 | 0 | 0 | 8 | 264 |
+| russellmitchell `intranet_server/auth.log` | 272 | 8 | 1 | 1 | 0 | 7 | 264 |
+| wardbeck `intranet_server/auth.log` | 124 | 12 | 1 | 1 | 0 | 11 | 112 |
 
-The current file parser classifies 272 of 272 lines as `log_info`; the live rules alert on **0 of 8** publisher-labeled privilege-escalation lines. Exact-line recall is 0.000; precision is undefined because the detector emitted no alerts. 0 false positives on this slice do not establish a production false-alarm rate.
+The file parser classifies 1 and 1 lines as privilege-escalation signals in the respective scenarios. Exact-line hits on publisher-labeled attack lines are 1/8 and 1/12. Across both small slices, 0 alerts fell on unlabeled lines; this does not establish a production false-alarm rate.
 
-The [AIT-LDS v2.1 publisher](https://zenodo.org/records/19483937) assigns attack-step labels by original line number. Its enterprise traffic is simulated in a testbed, and this is one 272-line auth-log slice from one host. The replay uses the existing file parser, normalization, SQL windows, alert path, and a temporary SQLite store with original log intervals. SOAR, threat feeds, and the shadow model are disabled. These counts do not estimate production precision, production recall, or incident-level detection.
+The [AIT-LDS v2.1 publisher](https://zenodo.org/records/19483937) assigns attack-step labels by original line number. Its enterprise traffic is simulated in a testbed. These are two auth-log slices from separate scenarios in the same testbed family. The rule was written before `wardbeck` label content was inspected and was not changed after its replay. Each replay uses the existing file parser, normalization, SQL windows, alert path, and a temporary SQLite store with original log intervals. SOAR, threat feeds, and the shadow model are disabled. These counts do not estimate production precision, production recall, or incident-level detection.
 <!-- ait-auth-metrics:end -->
+
+The [pre-rule baseline](ait-auth-baseline.json), measured at commit
+`6e8e13f`, had 0 alerts on the eight `russellmitchell` attack lines. It is a
+historical result; the checker above verifies the current rules and both
+scenario files. The new rule adds one alert in each labeled escalation sequence,
+while most labeled lines remain undetected.
 
 ## OpenSSH live rule replay
 

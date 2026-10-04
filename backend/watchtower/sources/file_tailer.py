@@ -53,6 +53,15 @@ LEVEL_MARKERS = (
     ("log_warning", ("warn", "warning", "unable to", "timeout", "retry")),
 )
 
+# A successful user switch started by a web-service account is a concrete
+# local privilege-change signal. The daemon tag and complete message must
+# agree; a generic app line mentioning these words is not enough. Ordinary
+# sudo sessions and administrator-initiated su remain unclassified here.
+SERVICE_ACCOUNTS = frozenset({"www-data", "apache", "nginx"})
+SU_DAEMON_TAG = "su"
+SUCCESSFUL_SU = re.compile(r"^Successful su for (?P<target>\S+) by (?P<actor>\S+)$")
+SU_REQUIRES_DIFFERENT_TARGET = True
+
 
 def _first_ip(text: str) -> str | None:
     for candidate in IPV4.findall(text):
@@ -90,16 +99,23 @@ def parse_line(line: str, path: str) -> dict | None:
         tag, pid, msg = g["tag"], g["pid"], g["msg"]
         message = f"{tag}[{pid}]: {msg}" if pid else f"{tag}: {msg}"
         source = g["host"]
+        account_switch = SUCCESSFUL_SU.fullmatch(msg) if tag == SU_DAEMON_TAG else None
     else:
         ts, message, source = now, line, Path(path).name
+        account_switch = None
+
+    service_actor = account_switch.group("actor") if account_switch else None
+    is_service_switch = service_actor in SERVICE_ACCOUNTS and (
+        not SU_REQUIRES_DIFFERENT_TARGET or account_switch.group("target") != service_actor
+    )
 
     return {
         "timestamp": ts.isoformat(),
         "source": source,
-        "event": classify(message),
+        "event": "privilege_escalation" if is_service_switch else classify(message),
         # Loopback unless the line names an address. See the module docstring.
         "ip": _first_ip(message) or "127.0.0.1",
-        "user": "unknown",
+        "user": service_actor if is_service_switch else "unknown",
         "message": message,
         "log_format": "syslog",
         "origin": "file",

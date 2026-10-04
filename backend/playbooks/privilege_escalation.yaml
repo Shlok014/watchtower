@@ -8,4 +8,4 @@ actions:
     required: false
   - action: notify
     required: false
-    message: privilege escalation by {user} from {ip} — session NOT terminated
+    message: privilege escalation by {user} on {source} — session NOT terminated

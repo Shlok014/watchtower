@@ -22,21 +22,40 @@ import certifi
 
 ARCHIVE_URL = "https://zenodo.org/records/19483937/files/russellmitchell_no-pcaps.zip?download=1"
 ARCHIVE_SIZE = 522_084_364
+WARDBECK_ARCHIVE_URL = "https://zenodo.org/records/19483937/files/wardbeck_no-pcaps.zip?download=1"
+WARDBECK_ARCHIVE_SIZE = 818_462_147
 RAW_MEMBER = "gather/intranet_server/logs/auth.log"
 LABEL_MEMBER = "labels/intranet_server/logs/auth.log"
 RAW_SHA256 = "091920347866802f42b869575c9b1139fa4fa783b83630a9ca1e0ce68a184e39"
 LABEL_SHA256 = "a5c8c79f03471928f2e2cc2eadd6282ccf836f2ab4b5770c34ddf52e317d2bd2"
+WARDBECK_RAW_SHA256 = "194bbc8319ab924de8236fd9c672674fcf20db0116e760a6ab0e5d0d55c0d746"
+WARDBECK_LABEL_SHA256 = "7aee23a3d88ab724ec33233ab9658185d16a869ee42434c8340711e86dc87681"
 MAX_MEMBER_BYTES = 1 << 20
 
 
-def http_range(start: int, end: int) -> bytes:
+def _scenario(name: str) -> tuple[str, int, str, str]:
+    if name == "russellmitchell":
+        return ARCHIVE_URL, ARCHIVE_SIZE, RAW_SHA256, LABEL_SHA256
+    if name == "wardbeck":
+        return (
+            WARDBECK_ARCHIVE_URL,
+            WARDBECK_ARCHIVE_SIZE,
+            WARDBECK_RAW_SHA256,
+            WARDBECK_LABEL_SHA256,
+        )
+    raise ValueError(f"unknown AIT scenario {name!r}")
+
+
+def http_range(
+    start: int, end: int, *, url: str = ARCHIVE_URL, archive_size: int = ARCHIVE_SIZE
+) -> bytes:
     """Fetch one exact inclusive range with TLS certificate verification."""
     request = urllib.request.Request(
-        ARCHIVE_URL,
+        url,
         headers={"Range": f"bytes={start}-{end}"},
     )
     context = ssl.create_default_context(cafile=certifi.where())
-    expected_range = f"bytes {start}-{end}/{ARCHIVE_SIZE}"
+    expected_range = f"bytes {start}-{end}/{archive_size}"
     for _ in range(3):
         with urllib.request.urlopen(request, context=context, timeout=30) as response:
             if response.status != 206 or response.headers.get("Content-Range") != expected_range:
@@ -141,10 +160,14 @@ def extract_subset(archive, out_dir: Path, *, raw_hash=RAW_SHA256, label_hash=LA
     return paths
 
 
-def fetch_subset(out_dir: Path) -> tuple[Path, Path]:
-    reader = RangeReader(ARCHIVE_SIZE, http_range)
+def fetch_subset(out_dir: Path, *, scenario: str = "russellmitchell") -> tuple[Path, Path]:
+    url, size, raw_hash, label_hash = _scenario(scenario)
+    reader = RangeReader(
+        size,
+        lambda start, end: http_range(start, end, url=url, archive_size=size),
+    )
     with zipfile.ZipFile(reader) as archive:
-        return extract_subset(archive, out_dir)
+        return extract_subset(archive, out_dir, raw_hash=raw_hash, label_hash=label_hash)
 
 
 def parse_labels(text: str, raw_lines: int) -> dict[int, tuple[str, ...]]:
@@ -174,7 +197,13 @@ def parse_labels(text: str, raw_lines: int) -> dict[int, tuple[str, ...]]:
     return found
 
 
-def evaluate(raw_path: Path, labels_path: Path, *, threshold: float = 0.45) -> dict:
+def evaluate(
+    raw_path: Path,
+    labels_path: Path,
+    *,
+    threshold: float = 0.45,
+    scenario: str = "russellmitchell",
+) -> dict:
     """Replay the pinned AIT auth log with the current file parser and rules.
 
     Each stored alert is joined to the original one-based source line that
@@ -187,13 +216,14 @@ def evaluate(raw_path: Path, labels_path: Path, *, threshold: float = 0.45) -> d
     from watchtower.sources.file_tailer import parse_line
     from watchtower.store import db, repos
 
+    _, _, expected_raw, expected_labels = _scenario(scenario)
     if not 0 < threshold <= 1:
         raise ValueError("threshold must be in (0, 1]")
     raw_bytes = Path(raw_path).read_bytes()
     label_bytes = Path(labels_path).read_bytes()
-    if hashlib.sha256(raw_bytes).hexdigest() != RAW_SHA256:
+    if hashlib.sha256(raw_bytes).hexdigest() != expected_raw:
         raise ValueError("raw auth.log SHA-256 differs from pinned source")
-    if hashlib.sha256(label_bytes).hexdigest() != LABEL_SHA256:
+    if hashlib.sha256(label_bytes).hexdigest() != expected_labels:
         raise ValueError("auth labels SHA-256 differs from pinned source")
     lines = raw_bytes.decode("utf-8").splitlines()
     labels = parse_labels(label_bytes.decode("utf-8"), len(lines))
@@ -254,13 +284,14 @@ def evaluate(raw_path: Path, labels_path: Path, *, threshold: float = 0.45) -> d
     fn = len(attack - alerted)
     tn = parsed - tp - fp - fn
     return {
-        "protocol": "ait_lds_v2_1_russellmitchell_auth_line_replay_v1",
+        "protocol": f"ait_lds_v2_1_{scenario}_auth_line_replay_v1",
         "source": {
             "record": "https://zenodo.org/records/19483937",
+            "scenario": scenario,
             "member": RAW_MEMBER,
-            "sha256": RAW_SHA256,
+            "sha256": expected_raw,
         },
-        "labels": {"member": LABEL_MEMBER, "sha256": LABEL_SHA256},
+        "labels": {"member": LABEL_MEMBER, "sha256": expected_labels},
         "raw_lines": len(lines),
         "parsed_events": parsed,
         "attack_lines": len(attack),

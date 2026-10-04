@@ -397,6 +397,65 @@ def test_file_line_classification_is_literal():
     assert info["event"] == "log_info"
 
 
+def test_file_auth_log_flags_successful_service_account_su():
+    raw = file_tailer.parse_line(
+        "Jan 24 04:37:40 intranet-server su[27950]: Successful su for jhall by www-data\n",
+        "/var/log/auth.log",
+    )
+    assert raw["event"] == "privilege_escalation"
+    assert raw["user"] == "www-data"
+    assert raw["ip"] == "127.0.0.1"  # local host, no remote actor address in the line
+    assert raw["origin"] == "file"
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "Jan 24 04:37:40 host su[1]: Successful su for root by alice",
+        "Jan 24 04:37:40 host su[1]: Successful su for www-data by www-data",
+        "Jan 24 04:37:40 host su[1]: Failed su for root by www-data",
+        "Jan 24 04:37:40 host sudo: alice : USER=root ; COMMAND=/bin/ls",
+        "Jan 24 04:37:40 host app: Successful su for root by www-data",
+        "Jan 24 04:37:40 host su[1]: Successful su for root by www-data trailing",
+    ],
+)
+def test_file_auth_signal_does_not_relabel_generic_admin_or_lookalike_lines(line):
+    assert file_tailer.parse_line(line, "/var/log/auth.log")["event"] != "privilege_escalation"
+
+
+def test_service_account_su_reaches_alert_and_ledger(monkeypatch):
+    from watchtower import ledger, threatintel
+    from watchtower.pipeline import consumer
+
+    unavailable = threatintel.Verdict("unavailable", 0.0, (), "offline test", False)
+    monkeypatch.setattr(threatintel, "classify", lambda ip: unavailable)
+    monkeypatch.setattr(consumer, "run_response", lambda alert: None)
+    raw = file_tailer.parse_line(
+        "Jan 24 04:37:40 intranet-server su[27950]: Successful su for jhall by www-data",
+        "/var/log/auth.log",
+    )
+    stored = consumer.process_log(raw)
+    conn = db.connect()
+    alert = conn.execute(
+        "SELECT event, user, ip FROM alerts WHERE event_id=?", (stored["id"],)
+    ).fetchone()
+    assert alert is not None
+    assert (alert["event"], alert["user"], alert["ip"]) == (
+        "privilege_escalation",
+        "www-data",
+        "127.0.0.1",
+    )
+    assert ledger.verify(conn).ok
+
+
+def test_service_account_rule_changes_the_reported_ruleset_version(monkeypatch):
+    from watchtower.detect import rules
+
+    before = rules.ruleset_version()
+    monkeypatch.setattr(file_tailer, "SERVICE_ACCOUNTS", frozenset({"www-data"}))
+    assert rules.ruleset_version() != before
+
+
 def _tail_until(src, seen, count, timeout=5.0):
     deadline = time.monotonic() + timeout
     while len(seen) < count and time.monotonic() < deadline:

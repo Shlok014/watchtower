@@ -1,0 +1,44 @@
+{
+  "baseline_code_commit": "6e8e13f6148d5bcf38859fa595a4879677e0165c",
+  "result": {
+    "alert_line_numbers": [],
+    "alerts": 0,
+    "attack_lines": 8,
+    "confusion": {
+      "fn": 8,
+      "fp": 0,
+      "tn": 264,
+      "tp": 0
+    },
+    "event_counts": {
+      "log_info": 272
+    },
+    "label_source": "publisher_attack_step_line_numbers_in_synthetic_testbed",
+    "labels": {
+      "member": "labels/intranet_server/logs/auth.log",
+      "sha256": "a5c8c79f03471928f2e2cc2eadd6282ccf836f2ab4b5770c34ddf52e317d2bd2"
+    },
+    "limits": [
+      "One host's auth.log slice; attack labels concern privilege escalation, not SSH brute force.",
+      "The publisher's testbed traffic is simulated, not production traffic.",
+      "Exact-line alert attribution is not incident-level detection, and this slice does not estimate production precision or recall.",
+      "BSD auth.log lines omit the year; the file parser uses the current year, while original line intervals are preserved.",
+      "SOAR, threat feeds, and the live shadow profile are disabled to isolate rule behavior."
+    ],
+    "parsed_events": 272,
+    "precision": null,
+    "protocol": "ait_lds_v2_1_russellmitchell_auth_line_replay_v1",
+    "raw_lines": 272,
+    "recall": 0.0,
+    "replay_clock": "original_log_intervals",
+    "response_actions": "disabled_for_replay",
+    "ruleset_version": "rules-8285c88f",
+    "source": {
+      "member": "gather/intranet_server/logs/auth.log",
+      "record": "https://zenodo.org/records/19483937",
+      "sha256": "091920347866802f42b869575c9b1139fa4fa783b83630a9ca1e0ce68a184e39"
+    },
+    "threat_feeds": "disabled_for_replay",
+    "threshold": 0.45
+  }
+}

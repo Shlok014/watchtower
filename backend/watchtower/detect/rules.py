@@ -14,6 +14,7 @@ import hashlib
 import json
 
 from .. import config
+from ..sources import file_tailer
 from ..store import repos
 
 EVENT_WEIGHTS = {
@@ -42,7 +43,8 @@ def ruleset_version() -> str:
     The old ``model_version`` was an integer that /api/retrain incremented on
     demand, so the version advanced while the rules stayed identical — and it
     was stamped on every alert as though it identified the logic that produced
-    it. This changes if and only if the weights or the threshold change.
+    it. The fingerprint includes weights, windows, cooldown, threshold, and the
+    file-tail service-account signal that can now produce a rule alert.
     """
     return (
         "rules-"
@@ -53,6 +55,13 @@ def ruleset_version() -> str:
                     "failed_login": FAILED_LOGIN_RULES,
                     "frequency": FREQUENCY_RULES,
                     "alert_cooldown_s": ALERT_COOLDOWN_S,
+                    "file_service_account_su": {
+                        "accounts": sorted(file_tailer.SERVICE_ACCOUNTS),
+                        "daemon_tag": file_tailer.SU_DAEMON_TAG,
+                        "pattern": file_tailer.SUCCESSFUL_SU.pattern,
+                        "requires_different_target": file_tailer.SU_REQUIRES_DIFFERENT_TARGET,
+                        "event": "privilege_escalation",
+                    },
                     "threshold": threshold(),
                 },
                 sort_keys=True,
