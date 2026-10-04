@@ -13,7 +13,11 @@ app would re-chain the block and detect nothing.
 """
 
 import argparse
+import json
+import os
+import re
 import sys
+from pathlib import Path
 
 from . import config, ledger
 from .store import db, repos
@@ -54,9 +58,99 @@ def _config(args) -> int:
 
 
 # ─── ledger ───────────────────────────────────────────────────────────────────
+def _read_ledger_snapshot(conn, height=None):
+    """Keep verification and checkpoint lookup on the same SQLite snapshot."""
+    conn.execute("BEGIN")
+    try:
+        result = ledger.verify(conn)
+        tip = conn.execute(
+            "SELECT block_id, hash FROM ledger ORDER BY block_id DESC LIMIT 1"
+        ).fetchone()
+        anchored = (
+            conn.execute("SELECT hash FROM ledger WHERE block_id = ?", (height,)).fetchone()
+            if height is not None
+            else None
+        )
+        return result, tip, anchored
+    finally:
+        conn.execute("ROLLBACK")
+
+
+def _load_checkpoint(path):
+    with Path(path).open("rb") as source:
+        data = source.read(4097)
+    if len(data) > 4096:
+        raise ValueError("checkpoint exceeds 4096 bytes")
+    record = json.loads(data)
+    if (
+        not isinstance(record, dict)
+        or type(record.get("version")) is not int
+        or record["version"] != 1
+        or type(record.get("height")) is not int
+        or record["height"] < 1
+        or not isinstance(record.get("hash"), str)
+        or re.fullmatch(r"[0-9a-f]{64}", record["hash"]) is None
+    ):
+        raise ValueError("invalid checkpoint format")
+    return record
+
+
+def _checkpoint(args) -> int:
+    result, tip, _ = _read_ledger_snapshot(db.connect())
+    if tip is None:
+        print("Cannot checkpoint an empty ledger.", file=sys.stderr)
+        return 2
+    if not result.ok:
+        print("Cannot checkpoint a ledger that fails full verification.", file=sys.stderr)
+        return 1
+    record = {"version": 1, "height": tip["block_id"], "hash": tip["hash"]}
+    # Exclusive creation and owner-only mode prevent accidental replacement or
+    # disclosure. The operator must move this file outside DB-owner control.
+    created = False
+    try:
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+        if hasattr(os, "O_NOFOLLOW"):
+            flags |= os.O_NOFOLLOW
+        fd = os.open(args.output, flags, 0o600)
+        created = True
+        with os.fdopen(fd, "w", encoding="utf-8") as out:
+            json.dump(record, out, sort_keys=True)
+            out.write("\n")
+            out.flush()
+            os.fsync(out.fileno())
+    except OSError as exc:
+        if created:
+            Path(args.output).unlink(missing_ok=True)
+        print(f"Could not write checkpoint: {exc}", file=sys.stderr)
+        return 2
+    print(f"Checkpoint written: height {record['height']}, hash {record['hash']}")
+    print("Keep this file outside the database owner's control.")
+    return 0
+
+
 def _verify(args) -> int:
     conn = db.connect()
-    result = ledger.verify(conn)
+    checkpoint = None
+    if args.checkpoint:
+        try:
+            checkpoint = _load_checkpoint(args.checkpoint)
+        except (OSError, ValueError, UnicodeError) as exc:
+            print(f"Invalid checkpoint: {exc}", file=sys.stderr)
+            return 2
+    result, tip, anchored = _read_ledger_snapshot(
+        conn, checkpoint["height"] if checkpoint else None
+    )
+    if checkpoint and (
+        tip is None
+        or tip["block_id"] < checkpoint["height"]
+        or anchored is None
+        or anchored["hash"] != checkpoint["hash"]
+    ):
+        print(
+            f"❌ Checkpoint mismatch at height {checkpoint['height']}: "
+            "the anchored block is missing or its hash changed."
+        )
+        return 1
     n = result.blocks_checked
     if n == 0:
         print("Ledger is empty — nothing to verify.")
@@ -64,6 +158,8 @@ def _verify(args) -> int:
 
     if result.ok:
         print(f"✅ Chain verified — {n} blocks, every digest recomputed from the live event rows.")
+        if checkpoint:
+            print(f"   External checkpoint matched at height {checkpoint['height']}.")
         if result.pruned:
             print(
                 f"   {result.pruned} block(s) reference events removed by retention; those "
@@ -143,9 +239,17 @@ def build_parser() -> argparse.ArgumentParser:
         dest="cmd", required=True
     )
 
-    led.add_parser("verify", help="recompute every digest and report any tampering").set_defaults(
-        _fn=_verify
+    v = led.add_parser("verify", help="recompute every digest and report any tampering")
+    v.add_argument("--checkpoint", help="compare with a trusted external checkpoint JSON file")
+    v.set_defaults(_fn=_verify)
+
+    cp = led.add_parser(
+        "checkpoint", help="export the verified ledger tip for off-host safekeeping"
     )
+    cp.add_argument(
+        "--output", required=True, help="new checkpoint file; existing files are never replaced"
+    )
+    cp.set_defaults(_fn=_checkpoint)
 
     t = led.add_parser("tamper", help="deliberately corrupt one event, to demonstrate detection")
     t.add_argument("--event-id", type=int, required=True)
