@@ -18,7 +18,7 @@
   "protocol": "openssh_2k_alert_cooldown_comparison_v1",
   "replay_clock": "original_log_intervals",
   "response_actions": "disabled_for_replay",
-  "ruleset_version": "rules-8285c88f",
+  "ruleset_version": "rules-03db07fa",
   "source": {
     "lines": 2000,
     "name": "Loghub OpenSSH_2k.log",
