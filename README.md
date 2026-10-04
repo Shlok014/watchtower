@@ -549,6 +549,24 @@ edited), `header_mismatch` (the ledger row was edited), `chain_break`,
 `height_gap` (a block was deleted), and `pruned` — an event removed by
 retention, which is reported rather than treated as tampering.
 
+The chain alone cannot detect an attacker who controls the entire database and
+recomputes every affected hash. To make that attack detectable, export a
+checkpoint after a clean verification and preserve the resulting file outside
+the database owner's control (for example, in a separately administered vault):
+
+```bash
+cd backend
+.venv/bin/python -m watchtower ledger checkpoint --output /secure/off-host/watchtower-checkpoint.json
+.venv/bin/python -m watchtower ledger verify --checkpoint /secure/off-host/watchtower-checkpoint.json
+```
+
+The checkpoint records a block height and SHA-256 head hash. Verification checks
+the full chain and that the anchored block still has the saved hash; newer
+blocks may have been appended. The command refuses an empty or invalid chain,
+and never overwrites an existing checkpoint. An attacker who can replace the
+checkpoint can still forge the evidence; this is an external trust anchor, not
+a signature, timestamp authority, or proof that the original events were true.
+
 One implementation note worth reading if you ever build one of these: the digest
 covers `ts_ms`, the stored integer, not the ISO-8601 string. Hashing the ISO
 form on write and reconstructing it from milliseconds on verify silently loses
