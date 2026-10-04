@@ -18,7 +18,7 @@ from pathlib import Path
 
 SCHEMA_PATH = Path(__file__).resolve().parent / "schema.sql"
 MIGRATIONS_DIR = Path(__file__).resolve().parent / "migrations"
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 _local = threading.local()
 # Resolved lazily from config rather than captured at import. Bound at import,

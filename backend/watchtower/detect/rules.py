@@ -29,6 +29,7 @@ FREQUENCY_RULES = ((15, 0.20), (8, 0.10))
 
 FAILED_LOGIN_WINDOW_S = 60
 FREQUENCY_WINDOW_S = 30
+ALERT_COOLDOWN_S = 60
 
 
 def threshold() -> float:
@@ -51,6 +52,7 @@ def ruleset_version() -> str:
                     "events": EVENT_WEIGHTS,
                     "failed_login": FAILED_LOGIN_RULES,
                     "frequency": FREQUENCY_RULES,
+                    "alert_cooldown_s": ALERT_COOLDOWN_S,
                     "threshold": threshold(),
                 },
                 sort_keys=True,

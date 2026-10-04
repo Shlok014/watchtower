@@ -1,5 +1,20 @@
 # Measured results
 
+## OpenSSH live rule replay
+
+`python scripts/check_openssh_live_evidence.py` checks [the frozen replay JSON](openssh-live-replay.json) against a fresh run through the live parser, rule detector, SQLite store, and alert path. It replays the committed Loghub `OpenSSH_2k.log` with its original time intervals. The counterfactual changes only the alert cooldown; SOAR and threat feeds are disabled in both runs. The JSON records the source hash and event breakdown.
+
+<!-- openssh-live-metrics:start -->
+| Replay policy | Parsed events | Alerts | Alerted IPs |
+|---|---:|---:|---:|
+| No cooldown | 2,000 | 426 | 5 |
+| 60s_per_ip_event_type | 2,000 | 26 | 5 |
+
+The same 2,000 OpenSSH log lines produced **400 fewer repeated alerts** with the cooldown. The alerted IP set is identical in both runs, checked by its digest in the frozen JSON. The source has no independent incident labels, so these counts measure alert burden, not precision, recall, or false-alarm rate.
+<!-- openssh-live-metrics:end -->
+
+The cooldown is 60 seconds per IP, event type, and ruleset version. Every event is still recorded; repeat alerts within that window do not trigger another SOAR action. A successful manual unblock resets the cooldown for that IP. New event types may alert during an existing cooldown. The 2k sample is a fixed excerpt, and compressed `message repeated` lines are not expanded into individual attempts. A real traffic distribution and independent incident labels would be needed to evaluate detection quality.
+
 ## Live shadow evaluation
 
 `python scripts/check_live_shadow_evidence.py` regenerates the deterministic evidence and compares it with [the frozen JSON](live-shadow-eval.json). The direct feature proxy and raw-event replay are different tests of the new live shadow profile. Both use generated, labelled scenarios. The rule detector remains the only automatic alert trigger.

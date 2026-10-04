@@ -226,6 +226,22 @@ def _alert_row_to_dict(r, soar=None, shadow_verdict=None) -> dict:
     }
 
 
+def alert_within_cooldown(conn, ip: str, event: str, ruleset_version: str, since_ms: int) -> bool:
+    """Use committed alert evidence to keep alert throttling durable across restarts."""
+    return (
+        conn.execute(
+            """SELECT 1 FROM alerts a JOIN events e ON e.id = a.event_id
+               WHERE a.ip = ? AND a.event = ? AND a.ruleset_version = ?
+                 AND e.ingested_ts_ms > ?
+                 AND a.id > COALESCE(
+                     (SELECT alert_id FROM alert_cooldown_resets WHERE ip = ?), 0
+                 ) LIMIT 1""",
+            (ip, event, ruleset_version, since_ms, ip),
+        ).fetchone()
+        is not None
+    )
+
+
 def insert_alert(conn, alert: dict, event_id: int | None) -> int:
     cur = conn.execute(
         """INSERT INTO alerts (event_id, ts_ms, event, source, ip, user, severity,
@@ -715,6 +731,7 @@ def reset_all(conn) -> dict:
         "soar_steps",
         "soar_executions",
         "alert_review_events",
+        "alert_cooldown_resets",
         "event_shadow_verdicts",
         "alerts",
         "events",
@@ -808,6 +825,15 @@ def blocklist(conn=None, include_expired: bool = False, limit: int = 100) -> lis
 def unblock(conn, ip: str) -> bool:
     """Remove a block outright. Returns whether there was one."""
     cur = conn.execute("DELETE FROM blocklist WHERE ip = ?", (ip,))
+    if cur.rowcount:
+        last_alert_id = conn.execute(
+            "SELECT COALESCE(max(id), 0) FROM alerts WHERE ip = ?", (ip,)
+        ).fetchone()[0]
+        conn.execute(
+            """INSERT INTO alert_cooldown_resets(ip, alert_id) VALUES(?, ?)
+               ON CONFLICT(ip) DO UPDATE SET alert_id = excluded.alert_id""",
+            (ip, last_alert_id),
+        )
     return cur.rowcount > 0
 
 

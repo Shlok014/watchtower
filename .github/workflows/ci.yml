@@ -70,6 +70,9 @@ jobs:
       - name: Live shadow evidence matches deterministic synthetic replay
         run: python scripts/check_live_shadow_evidence.py
 
+      - name: OpenSSH live alert burden matches frozen replay
+        run: python scripts/check_openssh_live_evidence.py
+
       # docs/metrics.json is written by the benchmark; docs/METRICS.md is
       # generated from it in the same call. The README and the handoff are
       # hand-written, and that is the gap this closes — a figure copied into

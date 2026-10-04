@@ -183,7 +183,7 @@ def test_v2_database_migrates_existing_alert_to_new_review_state(isolated_config
     assert (row["status"], row["review_status"]) == ("contained", "new")
     assert (
         conn.execute("SELECT value FROM schema_meta WHERE key='schema_version'").fetchone()[0]
-        == "4"
+        == "5"
     )
     assert repos.alert_review_history(7) == []
     verdict = repos.recent_events()[0]["shadow_verdict"]
