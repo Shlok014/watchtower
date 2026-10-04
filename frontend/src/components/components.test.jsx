@@ -261,6 +261,25 @@ describe('AlertsPanel', () => {
     expect(screen.queryByLabelText(/review note/i)).not.toBeInTheDocument()
     expect(screen.getByText(/read-only/i)).toBeInTheDocument()
   })
+
+  it('lets a read-only viewer load older decisions in chronological order', async () => {
+    const entry = (id, note) => ({
+      id, from_status: 'new', to_status: 'investigating', note, actor: 'owner',
+      timestamp: '2026-10-04T00:00:00Z',
+    })
+    const onHistory = vi.fn()
+      .mockResolvedValueOnce({ review_status: 'closed', history: [entry(3, 'third'), entry(4, 'fourth')], has_more: true, next_cursor: 3 })
+      .mockResolvedValueOnce({ review_status: 'closed', history: [entry(1, 'first'), entry(2, 'second')], has_more: false, next_cursor: null })
+    render(<AlertsPanel alerts={[ALERT]} canWrite={false} onHistory={onHistory} />)
+    fireEvent.click(screen.getByRole('button', { name: /review alert 1/i }))
+    expect(await screen.findByText('third')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /load older/i }))
+    await waitFor(() => expect(onHistory).toHaveBeenLastCalledWith(1, 3))
+    expect(await screen.findByText('first')).toBeInTheDocument()
+    expect(screen.getAllByRole('listitem').map((item) => item.querySelector('p')?.textContent))
+      .toEqual(['first', 'second', 'third', 'fourth'])
+    expect(screen.queryByRole('button', { name: /load older/i })).not.toBeInTheDocument()
+  })
 })
 
 describe('LogsPanel', () => {

@@ -342,6 +342,7 @@ td.mono { font-family: var(--font-mono); }
 .alert-review-summary { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; flex-wrap: wrap; }
 .alert-review-toggle { background: none; border: 0; color: var(--cyan); padding: 0.3rem 0; cursor: pointer; font: inherit; }
 .alert-review-toggle:hover { text-decoration: underline; }
+.alert-review-toggle:disabled { opacity: 0.55; cursor: wait; }
 .alert-review-toggle:focus-visible, .alert-review-error button:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
 .alert-review-detail { padding-top: 0.45rem; overflow-wrap: anywhere; }
 .alert-review-context, .alert-review-empty, .alert-review-readonly { color: var(--text-dim); margin: 0.25rem 0 0.5rem; line-height: 1.5; }

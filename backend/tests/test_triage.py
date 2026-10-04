@@ -76,20 +76,44 @@ def test_closed_alert_can_be_reopened_with_a_recorded_reason(client):
     assert len(client.get(target).get_json()["history"]) == 3
 
 
-def test_review_post_reads_snapshot_after_releasing_write_lock(client, monkeypatch):
+def test_review_post_captures_snapshot_before_releasing_write_lock(client, monkeypatch):
     alert = _alert(client)
     target = f"{API_PREFIX}/alerts/{alert['id']}/review"
     original_snapshot = repos.alert_review_snapshot
 
-    def unlocked_snapshot(alert_id):
-        assert not db.connect().in_transaction
-        return original_snapshot(alert_id)
+    def locked_snapshot(alert_id, *, conn=None, cursor=None):
+        assert conn is db.connect()
+        assert conn.in_transaction
+        return original_snapshot(alert_id, conn=conn, cursor=cursor)
 
-    monkeypatch.setattr(repos, "alert_review_snapshot", unlocked_snapshot)
+    monkeypatch.setattr(repos, "alert_review_snapshot", locked_snapshot)
     response = client.post(target, json={"status": "investigating", "note": "Checking"})
     assert response.status_code == 200
     assert response.get_json()["review_status"] == "investigating"
     assert response.get_json()["history"][-1]["note"] == "Checking"
+
+
+def test_review_history_pages_reach_oldest_decision(client):
+    alert = _alert(client)
+    target = f"{API_PREFIX}/alerts/{alert['id']}/review"
+    with db.write() as conn:
+        conn.executemany(
+            """INSERT INTO alert_review_events
+               (alert_id, ts_ms, from_status, to_status, note, actor)
+               VALUES (?, ?, 'closed', 'new', ?, 'owner')""",
+            [(alert["id"], n, f"prior-{n}") for n in range(121)],
+        )
+    first = client.get(target).get_json()
+    assert first["has_more"] is True
+    assert first["next_cursor"] == first["history"][0]["id"]
+    second = client.get(f"{target}?cursor={first['next_cursor']}").get_json()
+    assert second["has_more"] is False
+    assert second["next_cursor"] is None
+    assert [row["note"] for row in second["history"]] == [f"prior-{n}" for n in range(21)]
+    assert set(row["id"] for row in first["history"]).isdisjoint(
+        row["id"] for row in second["history"]
+    )
+    assert client.get(f"{target}?cursor=bad").status_code == 400
 
 
 def test_review_history_response_is_bounded_but_database_remains_append_only(client):

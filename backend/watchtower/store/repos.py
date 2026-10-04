@@ -299,15 +299,26 @@ def alert_review_status(alert_id: int) -> str | None:
 
 
 def alert_review_history(alert_id: int, conn=None, limit: int = 100) -> list[dict]:
+    return alert_review_page(alert_id, conn=conn, limit=limit)["history"]
+
+
+def alert_review_page(
+    alert_id: int, conn=None, limit: int = 100, cursor: int | None = None
+) -> dict:
+    """Return newest decisions first by page, with each page ordered oldest to newest."""
     rows = (
         (conn or db.connect())
         .execute(
-            "SELECT * FROM alert_review_events WHERE alert_id = ? ORDER BY id DESC LIMIT ?",
-            (alert_id, limit),
+            """SELECT * FROM alert_review_events
+               WHERE alert_id = ? AND (? IS NULL OR id < ?)
+               ORDER BY id DESC LIMIT ?""",
+            (alert_id, cursor, cursor, limit + 1),
         )
         .fetchall()
     )
-    return [
+    has_more = len(rows) > limit
+    page = rows[:limit]
+    history = [
         {
             "id": row["id"],
             "timestamp": to_iso(row["ts_ms"]),
@@ -316,25 +327,36 @@ def alert_review_history(alert_id: int, conn=None, limit: int = 100) -> list[dic
             "note": row["note"],
             "actor": row["actor"],
         }
-        for row in reversed(rows)
+        for row in reversed(page)
     ]
+    return {
+        "history": history,
+        "has_more": has_more,
+        "next_cursor": page[-1]["id"] if has_more else None,
+    }
 
 
-def alert_review_snapshot(alert_id: int) -> dict | None:
+def alert_review_snapshot(alert_id: int, *, conn=None, cursor: int | None = None) -> dict | None:
     """Read state and history from one snapshot during concurrent transitions."""
-    conn = db.connect()
-    conn.execute("BEGIN")
+    own_transaction = conn is None
+    if own_transaction:
+        conn = db.connect()
+        conn.execute("BEGIN")
     try:
         row = conn.execute("SELECT review_status FROM alerts WHERE id = ?", (alert_id,)).fetchone()
         result = (
-            {"review_status": row["review_status"], "history": alert_review_history(alert_id, conn)}
+            {
+                "review_status": row["review_status"],
+                **alert_review_page(alert_id, conn, cursor=cursor),
+            }
             if row
             else None
         )
-        conn.execute("COMMIT")
+        if own_transaction:
+            conn.execute("COMMIT")
         return result
     except BaseException:
-        if conn.in_transaction:
+        if own_transaction and conn.in_transaction:
             conn.execute("ROLLBACK")
         raise
 

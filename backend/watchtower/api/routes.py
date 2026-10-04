@@ -66,7 +66,19 @@ def live_shadow_status():
 def alert_review(alert_id: int):
     """Owner audit workflow; independent of automatic response status."""
     if request.method == "GET":
-        snapshot = repos.alert_review_snapshot(alert_id)
+        raw_cursor = request.args.get("cursor")
+        if raw_cursor is not None and (
+            not raw_cursor.isascii()
+            or not raw_cursor.isdecimal()
+            or len(raw_cursor) > 19
+            or not 0 < int(raw_cursor) <= 9223372036854775807
+        ):
+            return jsonify(
+                {"error": "invalid_cursor", "detail": "cursor must be a positive integer"}
+            ), 400
+        snapshot = repos.alert_review_snapshot(
+            alert_id, cursor=int(raw_cursor) if raw_cursor else None
+        )
         if snapshot is None:
             return jsonify({"error": "alert_not_found"}), 404
         return jsonify(snapshot)
@@ -87,11 +99,12 @@ def alert_review(alert_id: int):
     try:
         with store_db.write() as conn:
             repos.transition_alert_review(conn, alert_id, target, note)
+            snapshot = repos.alert_review_snapshot(alert_id, conn=conn)
     except LookupError:
         return jsonify({"error": "alert_not_found"}), 404
     except repos.ReviewConflict as exc:
         return jsonify({"error": "review_conflict", "detail": str(exc)}), 409
-    return jsonify(repos.alert_review_snapshot(alert_id))
+    return jsonify(snapshot)
 
 
 @bp.route("/stats", methods=["GET"])

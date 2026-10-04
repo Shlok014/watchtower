@@ -13,6 +13,8 @@ export function AlertReview({ alert, canWrite = false, onHistory, onReview }) {
   const [saveError, setSaveError] = useState('')
   const [retry, setRetry] = useState(0)
   const [loaded, setLoaded] = useState({ key: null, detail: null, error: '' })
+  const [olderLoading, setOlderLoading] = useState(false)
+  const [olderError, setOlderError] = useState('')
   const requestVersion = useRef(0)
   const pollStatus = alert.review_status || 'new'
   const key = `${alert.id}:${pollStatus}:${retry}`
@@ -28,11 +30,17 @@ export function AlertReview({ alert, canWrite = false, onHistory, onReview }) {
     const version = ++requestVersion.current
     Promise.resolve().then(() => onHistory(alert.id)).then(
       (snapshot) => {
-        if (active && requestVersion.current === version) setLoaded({ key, detail: snapshot, error: '' })
+        if (active && requestVersion.current === version) {
+          setLoaded({ key, detail: snapshot, error: '' })
+          setOlderLoading(false)
+          setOlderError('')
+        }
       },
       (err) => {
         if (active && requestVersion.current === version) {
           setLoaded({ key, detail: null, error: err.detail || err.message || 'Could not load review history' })
+          setOlderLoading(false)
+          setOlderError('')
         }
       }
     )
@@ -44,7 +52,35 @@ export function AlertReview({ alert, canWrite = false, onHistory, onReview }) {
   }
 
   function reload() {
+    setOlderLoading(false)
+    setOlderError('')
     setRetry((value) => value + 1)
+  }
+
+  async function loadOlder() {
+    const cursor = detail?.next_cursor
+    if (!cursor || olderLoading) return
+    const version = requestVersion.current
+    setOlderLoading(true)
+    setOlderError('')
+    try {
+      const page = await onHistory(alert.id, cursor)
+      if (requestVersion.current === version) {
+        setLoaded((prior) => prior.key === key ? {
+          ...prior,
+          detail: {
+            ...prior.detail,
+            history: [...page.history, ...prior.detail.history],
+            has_more: page.has_more,
+            next_cursor: page.next_cursor,
+          },
+        } : prior)
+      }
+    } catch (err) {
+      if (requestVersion.current === version) setOlderError(err.detail || err.message || 'Could not load older history')
+    } finally {
+      if (requestVersion.current === version) setOlderLoading(false)
+    }
   }
 
   async function submit(event) {
@@ -55,6 +91,8 @@ export function AlertReview({ alert, canWrite = false, onHistory, onReview }) {
       return
     }
     requestVersion.current++
+    setOlderLoading(false)
+    setOlderError('')
     setSaving(true)
     setSaveError('')
     try {
@@ -94,6 +132,10 @@ export function AlertReview({ alert, canWrite = false, onHistory, onReview }) {
               ))}
             </ol>
           ) : <p className="alert-review-empty">No analyst decisions recorded yet.</p>}
+          {detail?.has_more && <button type="button" className="alert-review-toggle" onClick={loadOlder} disabled={olderLoading}>
+            {olderLoading ? 'Loading older…' : 'Load older decisions'}
+          </button>}
+          {olderError && <p className="alert-review-error" role="alert">{olderError}</p>}
           {error && <p className="alert-review-error" role="alert">{error} <button type="button" onClick={reload}>Retry history</button></p>}
           {canWrite && onReview ? (
             <form className="alert-review-form" onSubmit={submit}>
