@@ -119,6 +119,13 @@ its labels come from the scenario generator, not real incident review. Do not
 use this demo profile to judge real traffic. `/api/v1/live-shadow/status` shows
 which profile, if any, the running process loaded.
 
+An [independently labeled AIT testbed auth-log replay](docs/METRICS.md#independently-labeled-auth-log-replay)
+also exposes a current limitation: Watchtower ingests all 272 lines but raises
+no alerts on eight publisher-labeled privilege-escalation lines. The file
+parser treats them all as `log_info`; the rule detector has no evidence to score
+them as attacks. This one simulated slice is a negative test of that path, not
+a production recall estimate or a claim about SSH brute-force detection.
+
 ## Ingestion sources
 
 Four of them, and every one goes through **the same** `process_log`. There is no

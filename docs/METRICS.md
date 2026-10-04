@@ -1,5 +1,22 @@
 # Measured results
 
+## Independently labeled auth-log replay
+
+`python scripts/check_ait_auth_evidence.py --fetch` downloads two pinned files
+from the official AIT archive by byte range into ignored local data, then
+replays them and compares [the frozen evidence](ait-auth-eval.json). No AIT raw
+logs or label files are committed to this repository.
+
+<!-- ait-auth-metrics:start -->
+| Source slice | Parsed lines | Publisher-labeled attack lines | Alerted lines | TP | FP | FN | TN |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| AIT-LDS v2.1 `russellmitchell/intranet_server/auth.log` | 272 | 8 | 0 | 0 | 0 | 8 | 264 |
+
+The current file parser classifies 272 of 272 lines as `log_info`; the live rules alert on **0 of 8** publisher-labeled privilege-escalation lines. Exact-line recall is 0.000; precision is undefined because the detector emitted no alerts. 0 false positives on this slice do not establish a production false-alarm rate.
+
+The [AIT-LDS v2.1 publisher](https://zenodo.org/records/19483937) assigns attack-step labels by original line number. Its enterprise traffic is simulated in a testbed, and this is one 272-line auth-log slice from one host. The replay uses the existing file parser, normalization, SQL windows, alert path, and a temporary SQLite store with original log intervals. SOAR, threat feeds, and the shadow model are disabled. These counts do not estimate production precision, production recall, or incident-level detection.
+<!-- ait-auth-metrics:end -->
+
 ## OpenSSH live rule replay
 
 `python scripts/check_openssh_live_evidence.py` checks [the frozen replay JSON](openssh-live-replay.json) against a fresh run through the live parser, rule detector, SQLite store, and alert path. It replays the committed Loghub `OpenSSH_2k.log` with its original time intervals. The counterfactual changes only the alert cooldown; SOAR and threat feeds are disabled in both runs. The JSON records the source hash and event breakdown.
