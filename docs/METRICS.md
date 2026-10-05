@@ -2,27 +2,33 @@
 
 ## Independently labeled auth-log replay
 
-`python scripts/check_ait_auth_evidence.py --fetch` downloads four pinned files
-from the two official AIT scenario archives by byte range into ignored local data, then
+`python scripts/check_ait_auth_evidence.py --fetch` downloads 15 pinned files
+from all eight official AIT scenario archives by byte range into ignored local data, then
 replays them and compares [the frozen evidence](ait-auth-eval.json). No AIT raw
 logs or label files are committed to this repository.
 
 <!-- ait-auth-metrics:start -->
-| AIT-LDS v2.1 scenario | Parsed lines | Publisher-labeled attack lines | Alerted lines | TP | FP | FN | TN |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| russellmitchell `intranet_server/auth.log` | 272 | 8 | 1 | 1 | 0 | 7 | 264 |
-| wardbeck `intranet_server/auth.log` | 124 | 12 | 1 | 1 | 0 | 11 | 112 |
+| AIT-LDS v2.1 scenario | Auth label member | Parsed lines | Labeled lines | Alerts | TP | FP | FN | TN | Labeled runs hit |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| fox | present | 572 | 12 | 1 | 1 | 0 | 11 | 560 | 1/1 |
+| harrison | present | 421 | 15 | 1 | 1 | 0 | 14 | 406 | 1/1 |
+| russellmitchell | present | 272 | 8 | 1 | 1 | 0 | 7 | 264 | 1/1 |
+| santos | present | 270 | 12 | 1 | 1 | 0 | 11 | 258 | 1/1 |
+| shaw | absent | 112 | n/a | 0 | n/a | n/a | n/a | n/a | n/a |
+| wardbeck | present | 124 | 12 | 1 | 1 | 0 | 11 | 112 | 1/1 |
+| wheeler | present | 121 | 11 | 1 | 1 | 0 | 10 | 110 | 1/1 |
+| wilson | present | 422 | 12 | 1 | 1 | 0 | 11 | 410 | 1/1 |
 
-The file parser classifies 1 and 1 lines as privilege-escalation signals in the respective scenarios. Exact-line hits on publisher-labeled attack lines are 1/8 and 1/12. Across both small slices, 0 alerts fell on unlabeled lines; this does not establish a production false-alarm rate.
+Across the publisher's eight scenario archives, 82 auth-log lines carry attack labels and 7/7 contiguous labeled runs contain an alert. 0 alerts fell on unlabeled lines in the seven label-bearing slices. Labeled lines were parsed as `log_info` 75, `privilege_escalation` 7. Alert event types were `privilege_escalation` 7. A run is consecutive labeled line numbers in one file, not an independently labeled incident. Run coverage does not mean every attack step was recognized: 75 labeled lines remained `log_info`. Exact-line alert counts and run hits answer different questions; neither is incident recall.
 
-The [AIT-LDS v2.1 publisher](https://zenodo.org/records/19483937) assigns attack-step labels by original line number. Its enterprise traffic is simulated in a testbed. These are two auth-log slices from separate scenarios in the same testbed family. The rule was written before `wardbeck` label content was inspected and was not changed after its replay. Each replay uses the existing file parser, normalization, SQL windows, alert path, and a temporary SQLite store with original log intervals. SOAR, threat feeds, and the shadow model are disabled. These counts do not estimate production precision, production recall, or incident-level detection.
+The [AIT-LDS v2.1 publisher](https://zenodo.org/records/19483937) assigns attack-step labels by original line number. Its enterprise traffic is simulated in a testbed. Each row is only `intranet_server/auth.log`, not all hosts or log types in that scenario. `shaw` has no matching publisher label member; its confusion counts are undefined, not proof that no attack activity existed. `russellmitchell`, `santos`, and `wardbeck` had been examined earlier; the other five were included as the remaining publisher scenarios before their contents were inspected. The detector was not changed for this comparison. The replay uses the existing file parser, normalization, SQL windows, alert path, and temporary SQLite with original log intervals. SOAR, threat feeds, and the shadow model are disabled. These small same-family slices do not estimate production precision, production recall, or incident-level detection.
 <!-- ait-auth-metrics:end -->
 
 The [pre-rule baseline](ait-auth-baseline.json), measured at commit
 `6e8e13f`, had 0 alerts on the eight `russellmitchell` attack lines. It is a
-historical result; the checker above verifies the current rules and both
-scenario files. The new rule adds one alert in each labeled escalation sequence,
-while most labeled lines remain undetected.
+historical result; the checker above verifies the current rules and all eight
+scenario slices. The same focused rule adds one alert in each of the seven
+label-bearing escalation runs, while most labeled lines remain unalerted.
 
 ## OpenSSH live rule replay
 

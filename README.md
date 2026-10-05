@@ -122,10 +122,15 @@ which profile, if any, the running process loaded.
 An [independently labeled AIT testbed auth-log replay](docs/METRICS.md#independently-labeled-auth-log-replay)
 exposed a blind spot: before the service-account `su` rule, Watchtower ingested
 all 272 `russellmitchell` auth-log lines as `log_info` and alerted on none of
-eight publisher-labeled privilege-escalation lines. The focused rule now alerts
-on one of those eight lines and one of 12 labeled lines in a separate AIT
-scenario. Most labeled lines remain unalerted; these simulated slices are
-neither a production recall estimate nor a claim about SSH brute-force detection.
+eight publisher-labeled privilege-escalation lines. The fixed rule now raises
+one alert within the labeled escalation run in each of seven label-bearing
+scenarios; `shaw` has no matching auth-log label file and raises none. That is
+7/7 contiguous labeled runs hit but only 7/82 labeled lines alerted, because
+the remaining labeled steps mostly stay `log_info`. All eight slices come from
+the same synthetic testbed family, and all seven alerts have the same successful
+service-account `su` shape. They show repeatability of one signal, not coverage
+of diverse attack behaviors. Neither figure estimates production recall or
+proves detection of every attack step.
 
 ## Ingestion sources
 
