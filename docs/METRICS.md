@@ -63,12 +63,27 @@ The direct feature proxy feeds rule-feature-shaped dictionaries to the profile; 
 
 The event ledger hashes the ingested event, not the analyst review history or shadow verdict. The profile digest detects accidental artifact changes; it is not an authenticity signature.
 
+<!-- hdfs-temporal:start -->
+## Time-disjoint HDFS validation
+
+`python -m eval.hdfs_temporal` rebuilds [the frozen result](hdfs-temporal-eval.json) from the full HDFS log and publisher labels. It does not load or save the dashboard model or its miner state.
+
+The source-line midpoint is line 5,587,814. 215,638 blocks end before it (8,496 anomalous); 303,863 blocks start after it (6,944 anomalous). 55,560 blocks span the boundary and are excluded from both sides. The parser mines templates only on training lines; later lines may match those templates but cannot create new ones.
+
+| Model | Precision | Recall | F1 | ROC-AUC | TP | FP | FN | TN |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| LogisticRegression | 0.8082 | 0.9996 | 0.8938 | 0.9958 | 6,941 | 1,647 | 3 | 295,272 |
+
+The training-only miner created 43 templates. Of 5,168,142 later log lines, 5,168,121 matched existing templates and 21 did not. 301,552 of 303,863 test blocks have an exact count vector also present in training (6,396 of 6,944 anomalous test blocks). This is a time-separated block evaluation, not a new-pattern generalization claim.
+
+The published stratified random-block result below uses a different split and should not be read as a production estimate. Both runs use complete HDFS blocks and their publisher labels; neither measures the live partial-block scorer or the dashboard rule detector.
+<!-- hdfs-temporal:end -->
+
 ## HDFS benchmark
 
-The HDFS figures below come from `python -m eval.benchmark`; the live shadow
-section comes from `python scripts/check_live_shadow_evidence.py`. Each section
-names the run that produced it. Template mining uses training blocks only;
-held-out log lines can match existing templates but cannot create new ones.
+The HDFS figures below come from `python -m eval.benchmark`. Other sections
+name their own replay. Template mining uses training blocks only; held-out
+log lines can match existing templates but cannot create new ones.
 
 ## Log parsing
 

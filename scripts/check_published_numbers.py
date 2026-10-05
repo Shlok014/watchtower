@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """Fail the build if a published figure drifts from the run that produced it.
 
-`docs/metrics.json` is written by `python -m eval.benchmark` and is the only
-source of measured results in this repository. `docs/METRICS.md` is generated
-from it in the same call, so those two cannot disagree. **The README and the
-handoff are hand-written**, and that is the gap this closes: a figure copied
-into prose today is a figure nobody re-copies when the benchmark is re-run.
+`docs/metrics.json` is written by `python -m eval.benchmark` and is the source
+for the HDFS random-split figures checked here. Other measured sections have
+their own frozen evidence and checkers. **The README and the handoff are
+hand-written**, and that is the gap this closes: a figure copied into prose
+today is a figure nobody re-copies when the benchmark is re-run.
 
 That is not hypothetical here. Changing the evaluation to train-only template
 mining and a label-free IsolationForest baseline moved its F1 to 0.3087 and

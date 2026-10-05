@@ -414,6 +414,14 @@ blocks (2.93% anomalous), 45 mined templates, stratified 50/50 split at seed 42:
 | DecisionTree | yes | 0.9986 | 0.9986 | **0.9986** | 0.9996 |
 | IsolationForest | no | 0.1969 | 0.7150 | **0.3087** | 0.9465 |
 
+A separate [time-disjoint HDFS validation](docs/METRICS.md#time-disjoint-hdfs-validation)
+trains on 215,638 blocks that end before the source midpoint and tests on
+303,863 blocks that start after it; 55,560 spanning blocks are excluded.
+LogisticRegression reaches **0.8938 F1** (precision 0.8082, recall 0.9996),
+below its random-split 0.9797. Even this split repeats patterns: 301,552 test
+blocks have an exact count vector seen in training. Neither score establishes
+performance on new attack types, a different environment, or live partial blocks.
+
 Parse-and-featurise throughput: **89,055 lines/sec** (125.5s to read, mine,
 and featurise 11.2M lines over three passes). This benchmark excludes storage,
 ledger hashing, live detection, alerting, and SOAR.
@@ -627,7 +635,7 @@ make dev       # API on :5001, dashboard on :5173
 |---|---|
 | `make test` | Backend and frontend suites |
 | `make lint` | ruff, eslint, and the honesty gate |
-| `make bench` | regenerate `docs/METRICS.md` from a real run |
+| `make bench` | regenerate the HDFS benchmark section of `docs/METRICS.md` from a real run |
 | `make demo` | verify the ledger, corrupt one event with raw SQL, verify again |
 | `make feeds` | refresh the cached threat feeds |
 | `make data` | download the full HDFS_v1 benchmark (~1.5 GB extracted) |
@@ -660,7 +668,7 @@ backend/
     store/             db.py, repos.py, schema.sql
     telemetry/         measured, never invented
     threatintel/       cached public feeds + provenance
-  eval/                benchmarks; writes docs/METRICS.md
+  eval/                benchmarks; writes measured sections of docs/METRICS.md
   datasets/            loghub download
   tests/
 ```
