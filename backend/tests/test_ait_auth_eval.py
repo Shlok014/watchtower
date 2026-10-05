@@ -81,6 +81,23 @@ def test_subset_rejects_oversized_member(tmp_path):
         )
 
 
+def test_no_label_scenario_extracts_only_raw_and_rejects_unexpected_labels(tmp_path):
+    raw = b"Jan 24 04:37:40 host app: routine event\n"
+    raw_hash = hashlib.sha256(raw).hexdigest()
+    raw_only = _zip_bytes({ait_auth.RAW_MEMBER: raw})
+    with zipfile.ZipFile(io.BytesIO(raw_only)) as archive:
+        paths = ait_auth.extract_subset(archive, tmp_path, raw_hash=raw_hash, label_hash=None)
+    assert paths == (tmp_path / "auth.log", None)
+    assert sorted(path.name for path in tmp_path.iterdir()) == ["auth.log"]
+
+    mislabeled = _zip_bytes({ait_auth.RAW_MEMBER: raw, ait_auth.LABEL_MEMBER: b"unexpected"})
+    with (
+        zipfile.ZipFile(io.BytesIO(mislabeled)) as archive,
+        pytest.raises(ValueError, match="unexpected label member"),
+    ):
+        ait_auth.extract_subset(archive, tmp_path, raw_hash=raw_hash, label_hash=None)
+
+
 def test_range_request_rejects_server_that_ignores_range(monkeypatch):
     class Response:
         status = 200
@@ -153,6 +170,8 @@ def test_replay_matches_alerts_to_original_line_numbers(tmp_path, monkeypatch):
     assert result["attack_lines"] == 1
     assert result["alerts"] == 1
     assert result["confusion"] == {"tp": 1, "fp": 0, "fn": 0, "tn": 9}
+    assert result["labeled_event_counts"] == {"log_info": 1}
+    assert result["alert_event_counts"] == {"log_info": 1}
     assert result["precision"] == result["recall"] == 1.0
     assert result["alert_line_numbers"] == [9]
     assert config.get() is before_config
@@ -166,6 +185,47 @@ def test_replay_rejects_unpinned_source(tmp_path):
     labels.write_text('{"line":1,"labels":["attack"]}\n')
     with pytest.raises(ValueError, match="SHA-256"):
         ait_auth.evaluate(raw, labels)
+
+
+def test_no_label_replay_reports_undefined_recall(tmp_path, monkeypatch):
+    raw = b"Jan 24 04:37:40 host app: routine event\n"
+    raw_path = tmp_path / "auth.log"
+    raw_path.write_bytes(raw)
+    monkeypatch.setattr(
+        ait_auth,
+        "_scenario",
+        lambda _: ("https://zenodo.org/example.zip", 1, hashlib.sha256(raw).hexdigest(), None),
+    )
+
+    result = ait_auth.evaluate(raw_path, None, scenario="shaw")
+    assert result["attack_lines"] == 0
+    assert result["labels"] == {"member": None, "sha256": None}
+    assert result["confusion"] == {"tp": None, "fp": None, "fn": None, "tn": None}
+    assert result["labeled_event_counts"] == {}
+    assert result["alert_event_counts"] == {}
+    assert result["recall"] is None
+    assert result["label_source"] == "no_matching_publisher_label_member"
+
+
+def test_replay_rejects_label_on_unparsed_line(tmp_path, monkeypatch):
+    raw = b"\nJan 24 04:37:40 host app: routine event\n"
+    labels = b'{"line":1,"labels":["attack_step"]}\n'
+    raw_path = tmp_path / "auth.log"
+    labels_path = tmp_path / "auth.labels.jsonl"
+    raw_path.write_bytes(raw)
+    labels_path.write_bytes(labels)
+    monkeypatch.setattr(ait_auth, "RAW_SHA256", hashlib.sha256(raw).hexdigest())
+    monkeypatch.setattr(ait_auth, "LABEL_SHA256", hashlib.sha256(labels).hexdigest())
+
+    with pytest.raises(ValueError, match="unparsed"):
+        ait_auth.evaluate(raw_path, labels_path)
+
+
+def test_labeled_runs_group_consecutive_lines_and_count_alert_hits():
+    assert ait_auth.labeled_runs({2, 3, 5, 6}, {3, 9}) == [
+        {"start_line": 2, "end_line": 3, "alert_line_numbers": [3]},
+        {"start_line": 5, "end_line": 6, "alert_line_numbers": []},
+    ]
 
 
 def test_separate_scenario_has_its_own_source_pins_and_identity(tmp_path, monkeypatch):

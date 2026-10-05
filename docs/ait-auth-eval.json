@@ -1,7 +1,134 @@
 {
-  "protocol": "ait_lds_v2_1_auth_scenario_comparison_v1",
+  "protocol": "ait_lds_v2_1_all_auth_scenarios_v2",
   "scenarios": {
+    "fox": {
+      "alert_event_counts": {
+        "privilege_escalation": 1
+      },
+      "alert_line_numbers": [
+        349
+      ],
+      "alerts": 1,
+      "attack_lines": 12,
+      "confusion": {
+        "fn": 11,
+        "fp": 0,
+        "tn": 560,
+        "tp": 1
+      },
+      "event_counts": {
+        "log_info": 571,
+        "privilege_escalation": 1
+      },
+      "label_source": "publisher_attack_step_line_numbers_in_synthetic_testbed",
+      "labeled_event_counts": {
+        "log_info": 11,
+        "privilege_escalation": 1
+      },
+      "labeled_run_hits": 1,
+      "labeled_runs": [
+        {
+          "alert_line_numbers": [
+            349
+          ],
+          "end_line": 360,
+          "start_line": 349
+        }
+      ],
+      "labels": {
+        "member": "labels/intranet_server/logs/auth.log",
+        "sha256": "401d07d93d75219ac7dc4e77c1373a1c1381cb13d2194007452f37e1da8383cc"
+      },
+      "limits": [
+        "One host's auth.log slice; attack labels concern privilege escalation, not SSH brute force.",
+        "The publisher's testbed traffic is simulated, not production traffic.",
+        "Exact-line alert attribution is not incident-level detection, and this slice does not estimate production precision or recall.",
+        "BSD auth.log lines omit the year; the file parser uses the current year, while original line intervals are preserved.",
+        "SOAR, threat feeds, and the live shadow profile are disabled to isolate rule behavior."
+      ],
+      "parsed_events": 572,
+      "precision": 1.0,
+      "protocol": "ait_lds_v2_1_fox_auth_line_replay_v1",
+      "raw_lines": 572,
+      "recall": 0.08333333333333333,
+      "replay_clock": "original_log_intervals",
+      "response_actions": "disabled_for_replay",
+      "ruleset_version": "rules-03db07fa",
+      "source": {
+        "member": "gather/intranet_server/logs/auth.log",
+        "record": "https://zenodo.org/records/19483937",
+        "scenario": "fox",
+        "sha256": "ded3e39860960ed9dd3be998fcf634976eb49dea3d10ac627f2bf22320d100f7"
+      },
+      "threat_feeds": "disabled_for_replay",
+      "threshold": 0.45
+    },
+    "harrison": {
+      "alert_event_counts": {
+        "privilege_escalation": 1
+      },
+      "alert_line_numbers": [
+        313
+      ],
+      "alerts": 1,
+      "attack_lines": 15,
+      "confusion": {
+        "fn": 14,
+        "fp": 0,
+        "tn": 406,
+        "tp": 1
+      },
+      "event_counts": {
+        "log_info": 420,
+        "privilege_escalation": 1
+      },
+      "label_source": "publisher_attack_step_line_numbers_in_synthetic_testbed",
+      "labeled_event_counts": {
+        "log_info": 14,
+        "privilege_escalation": 1
+      },
+      "labeled_run_hits": 1,
+      "labeled_runs": [
+        {
+          "alert_line_numbers": [
+            313
+          ],
+          "end_line": 327,
+          "start_line": 313
+        }
+      ],
+      "labels": {
+        "member": "labels/intranet_server/logs/auth.log",
+        "sha256": "cfe08997c24768f1e748202e50dee89eaf856007f3aec41246de4ec079bdc11a"
+      },
+      "limits": [
+        "One host's auth.log slice; attack labels concern privilege escalation, not SSH brute force.",
+        "The publisher's testbed traffic is simulated, not production traffic.",
+        "Exact-line alert attribution is not incident-level detection, and this slice does not estimate production precision or recall.",
+        "BSD auth.log lines omit the year; the file parser uses the current year, while original line intervals are preserved.",
+        "SOAR, threat feeds, and the live shadow profile are disabled to isolate rule behavior."
+      ],
+      "parsed_events": 421,
+      "precision": 1.0,
+      "protocol": "ait_lds_v2_1_harrison_auth_line_replay_v1",
+      "raw_lines": 421,
+      "recall": 0.06666666666666667,
+      "replay_clock": "original_log_intervals",
+      "response_actions": "disabled_for_replay",
+      "ruleset_version": "rules-03db07fa",
+      "source": {
+        "member": "gather/intranet_server/logs/auth.log",
+        "record": "https://zenodo.org/records/19483937",
+        "scenario": "harrison",
+        "sha256": "8ae7338e0ba79512c1ffe7db6ee337fc79adea5332f8824825d7d68e0910d3e2"
+      },
+      "threat_feeds": "disabled_for_replay",
+      "threshold": 0.45
+    },
     "russellmitchell": {
+      "alert_event_counts": {
+        "privilege_escalation": 1
+      },
       "alert_line_numbers": [
         145
       ],
@@ -18,6 +145,20 @@
         "privilege_escalation": 1
       },
       "label_source": "publisher_attack_step_line_numbers_in_synthetic_testbed",
+      "labeled_event_counts": {
+        "log_info": 7,
+        "privilege_escalation": 1
+      },
+      "labeled_run_hits": 1,
+      "labeled_runs": [
+        {
+          "alert_line_numbers": [
+            145
+          ],
+          "end_line": 152,
+          "start_line": 145
+        }
+      ],
       "labels": {
         "member": "labels/intranet_server/logs/auth.log",
         "sha256": "a5c8c79f03471928f2e2cc2eadd6282ccf836f2ab4b5770c34ddf52e317d2bd2"
@@ -46,7 +187,118 @@
       "threat_feeds": "disabled_for_replay",
       "threshold": 0.45
     },
+    "santos": {
+      "alert_event_counts": {
+        "privilege_escalation": 1
+      },
+      "alert_line_numbers": [
+        185
+      ],
+      "alerts": 1,
+      "attack_lines": 12,
+      "confusion": {
+        "fn": 11,
+        "fp": 0,
+        "tn": 258,
+        "tp": 1
+      },
+      "event_counts": {
+        "log_info": 269,
+        "privilege_escalation": 1
+      },
+      "label_source": "publisher_attack_step_line_numbers_in_synthetic_testbed",
+      "labeled_event_counts": {
+        "log_info": 11,
+        "privilege_escalation": 1
+      },
+      "labeled_run_hits": 1,
+      "labeled_runs": [
+        {
+          "alert_line_numbers": [
+            185
+          ],
+          "end_line": 196,
+          "start_line": 185
+        }
+      ],
+      "labels": {
+        "member": "labels/intranet_server/logs/auth.log",
+        "sha256": "8dd9c6ae0e3dce0fbbc593374229e8feb630007e8385d8c1493b22dbf152ef7c"
+      },
+      "limits": [
+        "One host's auth.log slice; attack labels concern privilege escalation, not SSH brute force.",
+        "The publisher's testbed traffic is simulated, not production traffic.",
+        "Exact-line alert attribution is not incident-level detection, and this slice does not estimate production precision or recall.",
+        "BSD auth.log lines omit the year; the file parser uses the current year, while original line intervals are preserved.",
+        "SOAR, threat feeds, and the live shadow profile are disabled to isolate rule behavior."
+      ],
+      "parsed_events": 270,
+      "precision": 1.0,
+      "protocol": "ait_lds_v2_1_santos_auth_line_replay_v1",
+      "raw_lines": 270,
+      "recall": 0.08333333333333333,
+      "replay_clock": "original_log_intervals",
+      "response_actions": "disabled_for_replay",
+      "ruleset_version": "rules-03db07fa",
+      "source": {
+        "member": "gather/intranet_server/logs/auth.log",
+        "record": "https://zenodo.org/records/19483937",
+        "scenario": "santos",
+        "sha256": "e58e17ce592a3cbddf0a2280276642ffd19802b3e8265ff3d3fed961aebf52c7"
+      },
+      "threat_feeds": "disabled_for_replay",
+      "threshold": 0.45
+    },
+    "shaw": {
+      "alert_event_counts": {},
+      "alert_line_numbers": [],
+      "alerts": 0,
+      "attack_lines": 0,
+      "confusion": {
+        "fn": null,
+        "fp": null,
+        "tn": null,
+        "tp": null
+      },
+      "event_counts": {
+        "log_info": 112
+      },
+      "label_source": "no_matching_publisher_label_member",
+      "labeled_event_counts": {},
+      "labeled_run_hits": 0,
+      "labeled_runs": [],
+      "labels": {
+        "member": null,
+        "sha256": null
+      },
+      "limits": [
+        "One host's auth.log slice; attack labels concern privilege escalation, not SSH brute force.",
+        "The publisher's testbed traffic is simulated, not production traffic.",
+        "Exact-line alert attribution is not incident-level detection, and this slice does not estimate production precision or recall.",
+        "BSD auth.log lines omit the year; the file parser uses the current year, while original line intervals are preserved.",
+        "SOAR, threat feeds, and the live shadow profile are disabled to isolate rule behavior."
+      ],
+      "parsed_events": 112,
+      "precision": null,
+      "protocol": "ait_lds_v2_1_shaw_auth_line_replay_v1",
+      "raw_lines": 112,
+      "recall": null,
+      "replay_clock": "original_log_intervals",
+      "response_actions": "disabled_for_replay",
+      "ruleset_version": "rules-03db07fa",
+      "source": {
+        "member": "gather/intranet_server/logs/auth.log",
+        "record": "https://zenodo.org/records/19483937",
+        "scenario": "shaw",
+        "sha256": "9e48ed6d4fab14468b5ccd55c4915e2839983261687e8f758a12c96c0c69cf6d"
+      },
+      "threat_feeds": "disabled_for_replay",
+      "threshold": 0.45
+    },
     "wardbeck": {
+      "alert_event_counts": {
+        "privilege_escalation": 1
+      },
       "alert_line_numbers": [
         43
       ],
@@ -63,6 +315,20 @@
         "privilege_escalation": 1
       },
       "label_source": "publisher_attack_step_line_numbers_in_synthetic_testbed",
+      "labeled_event_counts": {
+        "log_info": 11,
+        "privilege_escalation": 1
+      },
+      "labeled_run_hits": 1,
+      "labeled_runs": [
+        {
+          "alert_line_numbers": [
+            43
+          ],
+          "end_line": 54,
+          "start_line": 43
+        }
+      ],
       "labels": {
         "member": "labels/intranet_server/logs/auth.log",
         "sha256": "7aee23a3d88ab724ec33233ab9658185d16a869ee42434c8340711e86dc87681"
@@ -87,6 +353,130 @@
         "record": "https://zenodo.org/records/19483937",
         "scenario": "wardbeck",
         "sha256": "194bbc8319ab924de8236fd9c672674fcf20db0116e760a6ab0e5d0d55c0d746"
+      },
+      "threat_feeds": "disabled_for_replay",
+      "threshold": 0.45
+    },
+    "wheeler": {
+      "alert_event_counts": {
+        "privilege_escalation": 1
+      },
+      "alert_line_numbers": [
+        75
+      ],
+      "alerts": 1,
+      "attack_lines": 11,
+      "confusion": {
+        "fn": 10,
+        "fp": 0,
+        "tn": 110,
+        "tp": 1
+      },
+      "event_counts": {
+        "log_info": 120,
+        "privilege_escalation": 1
+      },
+      "label_source": "publisher_attack_step_line_numbers_in_synthetic_testbed",
+      "labeled_event_counts": {
+        "log_info": 10,
+        "privilege_escalation": 1
+      },
+      "labeled_run_hits": 1,
+      "labeled_runs": [
+        {
+          "alert_line_numbers": [
+            75
+          ],
+          "end_line": 85,
+          "start_line": 75
+        }
+      ],
+      "labels": {
+        "member": "labels/intranet_server/logs/auth.log",
+        "sha256": "279dda9a3411294ce7a0a05d45ad867cc8bcb84dfd8552d71267d8afc1cea561"
+      },
+      "limits": [
+        "One host's auth.log slice; attack labels concern privilege escalation, not SSH brute force.",
+        "The publisher's testbed traffic is simulated, not production traffic.",
+        "Exact-line alert attribution is not incident-level detection, and this slice does not estimate production precision or recall.",
+        "BSD auth.log lines omit the year; the file parser uses the current year, while original line intervals are preserved.",
+        "SOAR, threat feeds, and the live shadow profile are disabled to isolate rule behavior."
+      ],
+      "parsed_events": 121,
+      "precision": 1.0,
+      "protocol": "ait_lds_v2_1_wheeler_auth_line_replay_v1",
+      "raw_lines": 121,
+      "recall": 0.09090909090909091,
+      "replay_clock": "original_log_intervals",
+      "response_actions": "disabled_for_replay",
+      "ruleset_version": "rules-03db07fa",
+      "source": {
+        "member": "gather/intranet_server/logs/auth.log",
+        "record": "https://zenodo.org/records/19483937",
+        "scenario": "wheeler",
+        "sha256": "75f780eb765eb34f946558c48d81177f40322280a64faec44bbfd6d4152bb341"
+      },
+      "threat_feeds": "disabled_for_replay",
+      "threshold": 0.45
+    },
+    "wilson": {
+      "alert_event_counts": {
+        "privilege_escalation": 1
+      },
+      "alert_line_numbers": [
+        187
+      ],
+      "alerts": 1,
+      "attack_lines": 12,
+      "confusion": {
+        "fn": 11,
+        "fp": 0,
+        "tn": 410,
+        "tp": 1
+      },
+      "event_counts": {
+        "log_info": 421,
+        "privilege_escalation": 1
+      },
+      "label_source": "publisher_attack_step_line_numbers_in_synthetic_testbed",
+      "labeled_event_counts": {
+        "log_info": 11,
+        "privilege_escalation": 1
+      },
+      "labeled_run_hits": 1,
+      "labeled_runs": [
+        {
+          "alert_line_numbers": [
+            187
+          ],
+          "end_line": 198,
+          "start_line": 187
+        }
+      ],
+      "labels": {
+        "member": "labels/intranet_server/logs/auth.log",
+        "sha256": "4a3780280aeed2dc0229b2d2281d9aff4ddf71cebdb6822326060f9535553685"
+      },
+      "limits": [
+        "One host's auth.log slice; attack labels concern privilege escalation, not SSH brute force.",
+        "The publisher's testbed traffic is simulated, not production traffic.",
+        "Exact-line alert attribution is not incident-level detection, and this slice does not estimate production precision or recall.",
+        "BSD auth.log lines omit the year; the file parser uses the current year, while original line intervals are preserved.",
+        "SOAR, threat feeds, and the live shadow profile are disabled to isolate rule behavior."
+      ],
+      "parsed_events": 422,
+      "precision": 1.0,
+      "protocol": "ait_lds_v2_1_wilson_auth_line_replay_v1",
+      "raw_lines": 422,
+      "recall": 0.08333333333333333,
+      "replay_clock": "original_log_intervals",
+      "response_actions": "disabled_for_replay",
+      "ruleset_version": "rules-03db07fa",
+      "source": {
+        "member": "gather/intranet_server/logs/auth.log",
+        "record": "https://zenodo.org/records/19483937",
+        "scenario": "wilson",
+        "sha256": "aff486bcfcc77a7ee4eb969eafc0b4e8c92ec0ec86e79cbae4b37cbd43f7a912"
       },
       "threat_feeds": "disabled_for_replay",
       "threshold": 0.45
