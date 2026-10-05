@@ -106,6 +106,112 @@ def test_holdout_templates_are_not_mined_from_test_or_mixed_lines(tmp_path, monk
     assert stats["mixed_split_lines"] == 1
 
 
+def test_time_disjoint_holdout_excludes_blocks_that_span_cutoff(tmp_path, monkeypatch):
+    """A block observed on both sides cannot carry future evidence into training."""
+    from watchtower.detect.parser import LogParser
+
+    names = [
+        "blk_1",
+        "blk_2",
+        "blk_1",
+        "blk_2",
+        "blk_3",
+        "blk_4",
+        "blk_3",
+        "blk_4",
+        "blk_5",
+        "blk_6",
+        "blk_5",
+        "blk_6",
+    ]
+    path = tmp_path / "hdfs.log"
+    path.write_text(
+        "".join(
+            f"081109 203615 148 INFO dfs.DataNode: step{index} {block}\n"
+            for index, block in enumerate(names, 1)
+        )
+    )
+
+    class TinyDataset:
+        key = "time-test"
+        label = "time-test"
+
+        def log_path(self):
+            return path
+
+        def labels_path(self):
+            return features.SAMPLE.labels_path()
+
+    monkeypatch.setattr(
+        features,
+        "load_labels",
+        lambda _dataset: {f"blk_{i}": i % 2 for i in range(1, 7)},
+    )
+    parser = LogParser(persist=False)
+    parsed, matched = [], []
+    real_parse, real_match = parser.parse, parser.match
+
+    def spy_parse(content):
+        parsed.append(content)
+        return real_parse(content)
+
+    def spy_match(content):
+        matched.append(content)
+        return real_match(content)
+
+    monkeypatch.setattr(parser, "parse", spy_parse)
+    monkeypatch.setattr(parser, "match", spy_match)
+    X, y, blocks, _templates, stats = features.build_matrix_holdout(
+        parser, dataset=TinyDataset(), progress_every=0, split_method="time_disjoint"
+    )
+
+    assert blocks == ["blk_1", "blk_2", "blk_5", "blk_6"]
+    assert y.tolist() == [1, 0, 1, 0]
+    assert X.shape[0] == 4
+    assert stats["cutoff_line"] == 6
+    assert stats["excluded_crossing_blocks"] == 2
+    assert stats["train_blocks"] == 2
+    assert stats["test_blocks"] == 2
+    assert len(parsed) == 4
+    assert len(matched) == 4
+    assert all("blk_1" in content or "blk_2" in content for content in parsed)
+    assert all("blk_5" in content or "blk_6" in content for content in matched)
+    assert all("blk_3" not in x and "blk_4" not in x for x in parsed + matched)
+
+
+def test_time_disjoint_holdout_rejects_out_of_order_timestamps(tmp_path, monkeypatch):
+    from watchtower.detect.parser import LogParser
+
+    path = tmp_path / "hdfs.log"
+    path.write_text(
+        "081109 203615 148 INFO dfs.DataNode: step blk_1\n"
+        "081109 203617 148 INFO dfs.DataNode: step blk_2\n"
+        "081109 203616 148 INFO dfs.DataNode: step blk_3\n"
+        "081109 203618 148 INFO dfs.DataNode: step blk_4\n"
+    )
+
+    class TinyDataset:
+        key = "time-order-test"
+        label = "time-order-test"
+
+        def log_path(self):
+            return path
+
+        def labels_path(self):
+            return features.SAMPLE.labels_path()
+
+    monkeypatch.setattr(
+        features, "load_labels", lambda _dataset: {f"blk_{i}": i % 2 for i in range(1, 5)}
+    )
+    with pytest.raises(ValueError, match="out of order"):
+        features.build_matrix_holdout(
+            LogParser(persist=False),
+            dataset=TinyDataset(),
+            progress_every=0,
+            split_method="time_disjoint",
+        )
+
+
 def test_legacy_feature_cache_is_rejected_before_retraining():
     X = np.zeros((4, 1), dtype=np.float32)
     y = np.array([0, 1, 0, 1], dtype=np.int8)

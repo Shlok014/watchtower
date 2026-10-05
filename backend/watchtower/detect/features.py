@@ -178,7 +178,13 @@ def build_matrix(
     return X, y, block_ids, template_ids, stats
 
 
-def build_matrix_holdout(parser, dataset: Dataset = FULL, progress_every: int = 500_000):
+def build_matrix_holdout(
+    parser,
+    dataset: Dataset = FULL,
+    progress_every: int = 500_000,
+    *,
+    split_method: str = "stratified",
+):
     """Fit templates on training blocks, then freeze them for held-out blocks.
 
     HDFS lines may mention more than one block. A line spanning the split is
@@ -187,9 +193,15 @@ def build_matrix_holdout(parser, dataset: Dataset = FULL, progress_every: int = 
     """
     from .model import frozen_split
 
+    if split_method not in {"stratified", "time_disjoint"}:
+        raise ValueError(f"unknown holdout split method {split_method!r}")
+
     labels = load_labels(dataset)
     block_ids: list[str] = []
     seen_blocks: set[str] = set()
+    first_line: dict[str, int] = {}
+    last_line: dict[str, int] = {}
+    previous_stamp: str | None = None
     lines = lines_with_block_id = 0
     t0 = time.perf_counter()
 
@@ -201,20 +213,55 @@ def build_matrix_holdout(parser, dataset: Dataset = FULL, progress_every: int = 
     with open(dataset.log_path(), encoding="utf-8", errors="replace") as fh:
         for line in fh:
             lines += 1
+            if split_method == "time_disjoint":
+                if not HEAD.match(line):
+                    raise ValueError(f"time-disjoint HDFS line {lines} has no valid timestamp")
+                stamp = line[:6] + line[7:13]
+                if previous_stamp is not None and stamp < previous_stamp:
+                    raise ValueError(f"HDFS timestamps are out of order at line {lines}")
+                previous_stamp = stamp
             _content, blocks = parts(line)
             if blocks:
                 lines_with_block_id += 1
             for block in blocks:
-                if block in labels and block not in seen_blocks:
+                if block not in labels:
+                    continue
+                if block not in seen_blocks:
                     seen_blocks.add(block)
                     block_ids.append(block)
+                    if split_method == "time_disjoint":
+                        first_line[block] = lines
+                if split_method == "time_disjoint":
+                    last_line[block] = lines
+
+    extra_stats = {}
+    if split_method == "time_disjoint":
+        cutoff = lines // 2
+        train_ids = [block for block in block_ids if last_line[block] <= cutoff]
+        test_ids = [block for block in block_ids if first_line[block] > cutoff]
+        excluded = len(block_ids) - len(train_ids) - len(test_ids)
+        block_ids = train_ids + test_ids
+        seen_blocks = set(block_ids)
+        train_idx = np.arange(len(train_ids))
+        test_idx = np.arange(len(train_ids), len(block_ids))
+        extra_stats = {
+            "cutoff_line": cutoff,
+            "train_blocks": len(train_ids),
+            "test_blocks": len(test_ids),
+            "excluded_crossing_blocks": excluded,
+        }
+    else:
+        train_idx = test_idx = None
 
     y = np.array([labels[block] for block in block_ids], dtype=np.int8)
     if len(y) == 0:
         raise ValueError("no labelled blocks — nothing to train on")
     if len(set(y.tolist())) < 2:
         raise ValueError(f"only one class present in {len(y)} labelled blocks — refusing to fit")
-    train_idx, test_idx = frozen_split(y)
+    if split_method == "stratified":
+        train_idx, test_idx = frozen_split(y)
+    elif not len(train_idx) or not len(test_idx) or len(set(y[train_idx].tolist())) < 2:
+        raise ValueError("time-disjoint split needs training rows from both classes and test rows")
     train_blocks = {block_ids[int(i)] for i in train_idx}
     test_blocks = {block_ids[int(i)] for i in test_idx}
     per_block: dict[str, Counter] = defaultdict(Counter)
@@ -267,7 +314,12 @@ def build_matrix_holdout(parser, dataset: Dataset = FULL, progress_every: int = 
         "dataset": dataset.key,
         "dataset_label": dataset.label,
         "feature_schema": FEATURE_SCHEMA,
-        "split_method": "stratified block 50/50; train-only template mining",
+        "split_method": (
+            "stratified block 50/50; train-only template mining"
+            if split_method == "stratified"
+            else "source-line midpoint; exclude blocks crossing cutoff; train-only template mining"
+        ),
+        **extra_stats,
         "lines_read": lines,
         "lines_with_block_id": lines_with_block_id,
         "blocks": len(block_ids),

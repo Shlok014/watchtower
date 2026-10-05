@@ -1,0 +1,58 @@
+{
+  "limits": [
+    "One HDFS corpus and its publisher block labels; no production intrusion labels.",
+    "Complete blocks wholly before or after the source-line midpoint; spanning blocks excluded.",
+    "Training templates are mined only from pre-cutoff blocks; later lines only match them.",
+    "Exact count-vector overlap means this is not a test of wholly new feature patterns.",
+    "Live partial-block scoring and the dashboard rule detector are different tasks."
+  ],
+  "model": {
+    "confusion": {
+      "fn": 3,
+      "fp": 1647,
+      "tn": 295272,
+      "tp": 6941
+    },
+    "f1": 0.8938,
+    "name": "LogisticRegression",
+    "params": {
+      "class_weight": "balanced",
+      "max_iter": 2000,
+      "random_state": 42
+    },
+    "precision": 0.8082,
+    "recall": 0.9996,
+    "roc_auc": 0.9958,
+    "sklearn": "1.9.0"
+  },
+  "parsing": {
+    "held_out_lines": 5168142,
+    "held_out_matched_lines": 5168121,
+    "held_out_unmatched_lines": 21,
+    "templates_mined_from_train": 43
+  },
+  "protocol": "hdfs_time_disjoint_source_midpoint_v1",
+  "source": {
+    "dataset": "loghub HDFS_v1 (full, 11.2M lines)",
+    "labels_sha256": "1c711ed6c8848fc3243fb4d092f172f31d128c8a6ec7f26ebba72ab931885ed8",
+    "log_sha256": "0783096174d7832c618337f9609e06e04abd86ddd7089b3c12b407e63bfebc52",
+    "raw_lines": 11175629
+  },
+  "split": {
+    "cutoff_line": 5587814,
+    "excluded_crossing_blocks": 55560,
+    "method": "source-line midpoint; exclude blocks crossing cutoff; train-only template mining",
+    "test_anomalies": 6944,
+    "test_blocks": 303863,
+    "train_anomalies": 8496,
+    "train_blocks": 215638
+  },
+  "vector_overlap": {
+    "distinct_vectors": 479,
+    "test_distinct_vectors": 152,
+    "test_negative_seen_in_train": 295156,
+    "test_positive_seen_in_train": 6396,
+    "test_rows_seen_in_train": 301552,
+    "train_distinct_vectors": 363
+  }
+}

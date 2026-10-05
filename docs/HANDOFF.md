@@ -107,8 +107,9 @@ an attack blocked 5 addresses and really dropped 18 events, and 989 ledger block
 verified clean.
 
 `scripts/check_published_numbers.py` was added along the way: `docs/metrics.json`
-and `docs/METRICS.md` cannot disagree because one generates the other, but the
-README and this file are hand-written. 43 figures checked.
+and the HDFS benchmark section of `docs/METRICS.md` are generated together.
+Other measured sections preserve their own frozen evidence. The README and this
+file are hand-written, so the checker catches copied figures that drift.
 
 ## What the review found
 
