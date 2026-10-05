@@ -37,6 +37,8 @@ def summary(data: dict) -> str:
     total_runs = 0
     labeled_types = Counter()
     alert_types = Counter()
+    publisher_rule_lines = Counter()
+    publisher_rule_hits = Counter()
     for name in SCENARIOS:
         result = data["scenarios"][name]
         counts = result["confusion"]
@@ -50,6 +52,9 @@ def summary(data: dict) -> str:
         total_runs += runs
         labeled_types.update(result["labeled_event_counts"])
         alert_types.update(result["alert_event_counts"])
+        for rule, coverage in (result["publisher_rule_coverage"] or {}).items():
+            publisher_rule_lines[rule] += coverage["labeled_lines"]
+            publisher_rule_hits[rule] += coverage["alerted_lines"]
         rows.append(
             f"| {name} | {'present' if has_labels else 'absent'} | {result['parsed_events']} | "
             f"{result['attack_lines'] if has_labels else 'n/a'} | {result['alerts']} | "
@@ -78,6 +83,18 @@ def summary(data: dict) -> str:
             f"step was recognized: {labeled_types.get('log_info', 0)} labeled lines "
             "remained `log_info`. Exact-line alert counts and run hits answer different "
             "questions; neither is incident recall.",
+            "",
+            "The publisher also annotates labeled lines with attack-step rule IDs. "
+            "The table counts a hit when Watchtower alerted on the same line; "
+            "it does not mean Watchtower implements or fired the named publisher rule. "
+            "A line may carry several IDs, so rows overlap and must not be summed.",
+            "",
+            "| Publisher attack-step annotation | Labeled lines | Same-line alerts |",
+            "|---|---:|---:|",
+            *(
+                f"| `{rule}` | {publisher_rule_lines[rule]} | {publisher_rule_hits[rule]} |"
+                for rule in sorted(publisher_rule_lines)
+            ),
             "",
             "The [AIT-LDS v2.1 publisher](https://zenodo.org/records/19483937) "
             "assigns attack-step labels by original line number. Its enterprise traffic "
@@ -109,7 +126,25 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--fetch", action="store_true", help="download only the pinned ZIP members")
     parser.add_argument("--write", action="store_true", help="regenerate frozen JSON and metrics")
+    parser.add_argument(
+        "--snapshot-only",
+        action="store_true",
+        help="check the published table against frozen JSON without raw files",
+    )
     args = parser.parse_args()
+    if args.snapshot_only:
+        if args.fetch or args.write:
+            parser.error("--snapshot-only cannot be combined with --fetch or --write")
+        if not SNAPSHOT.exists():
+            print("AIT frozen evidence is missing", file=sys.stderr)
+            return 1
+        frozen = json.loads(SNAPSHOT.read_text())
+        document = METRICS.read_text()
+        if replace_summary(document, summary(frozen)) != document:
+            print("AIT auth METRICS section drifted from frozen evidence", file=sys.stderr)
+            return 1
+        print("AIT auth published table matches frozen evidence; raw replay not run")
+        return 0
     results = {}
     for name in SCENARIOS:
         directory = DATA_ROOT / f"ait-{name}-auth"
@@ -125,7 +160,7 @@ def main() -> int:
             print(f"AIT {name} files missing; rerun with --fetch", file=sys.stderr)
             return 2
         results[name] = ait_auth.evaluate(raw, labels, scenario=name)
-    actual = {"protocol": "ait_lds_v2_1_all_auth_scenarios_v2", "scenarios": results}
+    actual = {"protocol": "ait_lds_v2_1_all_auth_scenarios_v3", "scenarios": results}
     encoded = json.dumps(actual, indent=2, sort_keys=True) + "\n"
     document = METRICS.read_text()
     expected_document = replace_summary(document, summary(actual))

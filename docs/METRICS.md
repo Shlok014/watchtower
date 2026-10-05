@@ -21,6 +21,17 @@ logs or label files are committed to this repository.
 
 Across the publisher's eight scenario archives, 82 auth-log lines carry attack labels and 7/7 contiguous labeled runs contain an alert. 0 alerts fell on unlabeled lines in the seven label-bearing slices. Labeled lines were parsed as `log_info` 75, `privilege_escalation` 7. Alert event types were `privilege_escalation` 7. A run is consecutive labeled line numbers in one file, not an independently labeled incident. Run coverage does not mean every attack step was recognized: 75 labeled lines remained `log_info`. Exact-line alert counts and run hits answer different questions; neither is incident recall.
 
+The publisher also annotates labeled lines with attack-step rule IDs. The table counts a hit when Watchtower alerted on the same line; it does not mean Watchtower implements or fired the named publisher rule. A line may carry several IDs, so rows overlap and must not be summed.
+
+| Publisher attack-step annotation | Labeled lines | Same-line alerts |
+|---|---:|---:|
+| `attacker.escalate.audit.sudo.command.start` | 14 | 0 |
+| `attacker.escalate.su.login` | 21 | 7 |
+| `attacker.escalate.sudo.command` | 28 | 0 |
+| `attacker.escalate.sudo.open` | 42 | 0 |
+| `attacker.escalate.systemd.newsession.after` | 14 | 0 |
+| `attacker.escalate.systemd.session` | 10 | 0 |
+
 The [AIT-LDS v2.1 publisher](https://zenodo.org/records/19483937) assigns attack-step labels by original line number. Its enterprise traffic is simulated in a testbed. Each row is only `intranet_server/auth.log`, not all hosts or log types in that scenario. `shaw` has no matching publisher label member; its confusion counts are undefined, not proof that no attack activity existed. `russellmitchell`, `santos`, and `wardbeck` had been examined earlier; the other five were included as the remaining publisher scenarios before their contents were inspected. The detector was not changed for this comparison. The replay uses the existing file parser, normalization, SQL windows, alert path, and temporary SQLite with original log intervals. SOAR, threat feeds, and the shadow model are disabled. These small same-family slices do not estimate production precision, production recall, or incident-level detection.
 <!-- ait-auth-metrics:end -->
 
