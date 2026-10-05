@@ -1,5 +1,5 @@
 {
-  "protocol": "ait_lds_v2_1_all_auth_scenarios_v2",
+  "protocol": "ait_lds_v2_1_all_auth_scenarios_v3",
   "scenarios": {
     "fox": {
       "alert_event_counts": {
@@ -49,6 +49,32 @@
       "parsed_events": 572,
       "precision": 1.0,
       "protocol": "ait_lds_v2_1_fox_auth_line_replay_v1",
+      "publisher_rule_coverage": {
+        "attacker.escalate.audit.sudo.command.start": {
+          "alerted_lines": 0,
+          "labeled_lines": 2
+        },
+        "attacker.escalate.su.login": {
+          "alerted_lines": 1,
+          "labeled_lines": 3
+        },
+        "attacker.escalate.sudo.command": {
+          "alerted_lines": 0,
+          "labeled_lines": 4
+        },
+        "attacker.escalate.sudo.open": {
+          "alerted_lines": 0,
+          "labeled_lines": 6
+        },
+        "attacker.escalate.systemd.newsession.after": {
+          "alerted_lines": 0,
+          "labeled_lines": 2
+        },
+        "attacker.escalate.systemd.session": {
+          "alerted_lines": 0,
+          "labeled_lines": 2
+        }
+      },
       "raw_lines": 572,
       "recall": 0.08333333333333333,
       "replay_clock": "original_log_intervals",
@@ -111,6 +137,32 @@
       "parsed_events": 421,
       "precision": 1.0,
       "protocol": "ait_lds_v2_1_harrison_auth_line_replay_v1",
+      "publisher_rule_coverage": {
+        "attacker.escalate.audit.sudo.command.start": {
+          "alerted_lines": 0,
+          "labeled_lines": 3
+        },
+        "attacker.escalate.su.login": {
+          "alerted_lines": 1,
+          "labeled_lines": 3
+        },
+        "attacker.escalate.sudo.command": {
+          "alerted_lines": 0,
+          "labeled_lines": 5
+        },
+        "attacker.escalate.sudo.open": {
+          "alerted_lines": 0,
+          "labeled_lines": 9
+        },
+        "attacker.escalate.systemd.newsession.after": {
+          "alerted_lines": 0,
+          "labeled_lines": 2
+        },
+        "attacker.escalate.systemd.session": {
+          "alerted_lines": 0,
+          "labeled_lines": 2
+        }
+      },
       "raw_lines": 421,
       "recall": 0.06666666666666667,
       "replay_clock": "original_log_intervals",
@@ -173,6 +225,28 @@
       "parsed_events": 272,
       "precision": 1.0,
       "protocol": "ait_lds_v2_1_russellmitchell_auth_line_replay_v1",
+      "publisher_rule_coverage": {
+        "attacker.escalate.audit.sudo.command.start": {
+          "alerted_lines": 0,
+          "labeled_lines": 1
+        },
+        "attacker.escalate.su.login": {
+          "alerted_lines": 1,
+          "labeled_lines": 3
+        },
+        "attacker.escalate.sudo.command": {
+          "alerted_lines": 0,
+          "labeled_lines": 3
+        },
+        "attacker.escalate.sudo.open": {
+          "alerted_lines": 0,
+          "labeled_lines": 3
+        },
+        "attacker.escalate.systemd.newsession.after": {
+          "alerted_lines": 0,
+          "labeled_lines": 2
+        }
+      },
       "raw_lines": 272,
       "recall": 0.125,
       "replay_clock": "original_log_intervals",
@@ -235,6 +309,32 @@
       "parsed_events": 270,
       "precision": 1.0,
       "protocol": "ait_lds_v2_1_santos_auth_line_replay_v1",
+      "publisher_rule_coverage": {
+        "attacker.escalate.audit.sudo.command.start": {
+          "alerted_lines": 0,
+          "labeled_lines": 2
+        },
+        "attacker.escalate.su.login": {
+          "alerted_lines": 1,
+          "labeled_lines": 3
+        },
+        "attacker.escalate.sudo.command": {
+          "alerted_lines": 0,
+          "labeled_lines": 4
+        },
+        "attacker.escalate.sudo.open": {
+          "alerted_lines": 0,
+          "labeled_lines": 6
+        },
+        "attacker.escalate.systemd.newsession.after": {
+          "alerted_lines": 0,
+          "labeled_lines": 2
+        },
+        "attacker.escalate.systemd.session": {
+          "alerted_lines": 0,
+          "labeled_lines": 2
+        }
+      },
       "raw_lines": 270,
       "recall": 0.08333333333333333,
       "replay_clock": "original_log_intervals",
@@ -281,6 +381,7 @@
       "parsed_events": 112,
       "precision": null,
       "protocol": "ait_lds_v2_1_shaw_auth_line_replay_v1",
+      "publisher_rule_coverage": null,
       "raw_lines": 112,
       "recall": null,
       "replay_clock": "original_log_intervals",
@@ -343,6 +444,32 @@
       "parsed_events": 124,
       "precision": 1.0,
       "protocol": "ait_lds_v2_1_wardbeck_auth_line_replay_v1",
+      "publisher_rule_coverage": {
+        "attacker.escalate.audit.sudo.command.start": {
+          "alerted_lines": 0,
+          "labeled_lines": 2
+        },
+        "attacker.escalate.su.login": {
+          "alerted_lines": 1,
+          "labeled_lines": 3
+        },
+        "attacker.escalate.sudo.command": {
+          "alerted_lines": 0,
+          "labeled_lines": 4
+        },
+        "attacker.escalate.sudo.open": {
+          "alerted_lines": 0,
+          "labeled_lines": 6
+        },
+        "attacker.escalate.systemd.newsession.after": {
+          "alerted_lines": 0,
+          "labeled_lines": 2
+        },
+        "attacker.escalate.systemd.session": {
+          "alerted_lines": 0,
+          "labeled_lines": 2
+        }
+      },
       "raw_lines": 124,
       "recall": 0.08333333333333333,
       "replay_clock": "original_log_intervals",
@@ -405,6 +532,28 @@
       "parsed_events": 121,
       "precision": 1.0,
       "protocol": "ait_lds_v2_1_wheeler_auth_line_replay_v1",
+      "publisher_rule_coverage": {
+        "attacker.escalate.audit.sudo.command.start": {
+          "alerted_lines": 0,
+          "labeled_lines": 2
+        },
+        "attacker.escalate.su.login": {
+          "alerted_lines": 1,
+          "labeled_lines": 3
+        },
+        "attacker.escalate.sudo.command": {
+          "alerted_lines": 0,
+          "labeled_lines": 4
+        },
+        "attacker.escalate.sudo.open": {
+          "alerted_lines": 0,
+          "labeled_lines": 6
+        },
+        "attacker.escalate.systemd.newsession.after": {
+          "alerted_lines": 0,
+          "labeled_lines": 2
+        }
+      },
       "raw_lines": 121,
       "recall": 0.09090909090909091,
       "replay_clock": "original_log_intervals",
@@ -467,6 +616,32 @@
       "parsed_events": 422,
       "precision": 1.0,
       "protocol": "ait_lds_v2_1_wilson_auth_line_replay_v1",
+      "publisher_rule_coverage": {
+        "attacker.escalate.audit.sudo.command.start": {
+          "alerted_lines": 0,
+          "labeled_lines": 2
+        },
+        "attacker.escalate.su.login": {
+          "alerted_lines": 1,
+          "labeled_lines": 3
+        },
+        "attacker.escalate.sudo.command": {
+          "alerted_lines": 0,
+          "labeled_lines": 4
+        },
+        "attacker.escalate.sudo.open": {
+          "alerted_lines": 0,
+          "labeled_lines": 6
+        },
+        "attacker.escalate.systemd.newsession.after": {
+          "alerted_lines": 0,
+          "labeled_lines": 2
+        },
+        "attacker.escalate.systemd.session": {
+          "alerted_lines": 0,
+          "labeled_lines": 2
+        }
+      },
       "raw_lines": 422,
       "recall": 0.08333333333333333,
       "replay_clock": "original_log_intervals",

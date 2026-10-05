@@ -73,6 +73,9 @@ jobs:
       - name: OpenSSH live alert burden matches frozen replay
         run: python scripts/check_openssh_live_evidence.py
 
+      - name: AIT auth published table matches frozen evidence
+        run: python scripts/check_ait_auth_evidence.py --snapshot-only
+
       # docs/metrics.json is written alongside the HDFS benchmark section of
       # docs/METRICS.md. Other sections have independent evidence, and the
       # backend tests check the frozen temporal HDFS section against its JSON.

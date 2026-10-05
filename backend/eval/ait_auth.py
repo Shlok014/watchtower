@@ -260,6 +260,39 @@ def labeled_runs(labels: set[int], alerted: set[int]) -> list[dict]:
     ]
 
 
+def publisher_rule_coverage(text: str, alerted: set[int]) -> dict[str, dict[str, int]]:
+    """Count publisher-annotated lines hit by any alert on that exact line.
+
+    The rule identifiers belong to the dataset publisher, not Watchtower's
+    ruleset. One line can carry multiple identifiers, so columns overlap.
+    """
+    labeled = Counter()
+    hits = Counter()
+    for record in text.splitlines():
+        try:
+            row = json.loads(record)
+        except json.JSONDecodeError as exc:
+            raise ValueError("invalid publisher rule annotation JSONL") from exc
+        if not isinstance(row, dict) or type(row.get("line")) is not int:
+            raise ValueError("invalid publisher rule annotation line")
+        annotations = row.get("rules", {})
+        if not isinstance(annotations, dict) or any(
+            not isinstance(name, str)
+            or not isinstance(values, list)
+            or any(not isinstance(value, str) or not value for value in values)
+            for name, values in annotations.items()
+        ):
+            raise ValueError("invalid publisher rule annotation")
+        for rule in {rule for values in annotations.values() for rule in values}:
+            labeled[rule] += 1
+            if row["line"] in alerted:
+                hits[rule] += 1
+    return {
+        rule: {"labeled_lines": labeled[rule], "alerted_lines": hits[rule]}
+        for rule in sorted(labeled)
+    }
+
+
 def evaluate(
     raw_path: Path,
     labels_path: Path | None,
@@ -388,6 +421,11 @@ def evaluate(
         "confusion": confusion,
         "labeled_runs": runs,
         "labeled_run_hits": sum(bool(run["alert_line_numbers"]) for run in runs),
+        "publisher_rule_coverage": (
+            publisher_rule_coverage(label_bytes.decode("utf-8"), alerted)
+            if label_bytes is not None
+            else None
+        ),
         "precision": precision,
         "recall": recall,
         "ruleset_version": version,

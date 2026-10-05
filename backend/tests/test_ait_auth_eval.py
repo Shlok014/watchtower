@@ -3,7 +3,10 @@
 import hashlib
 import io
 import json
+import subprocess
+import sys
 import zipfile
+from pathlib import Path
 
 import pytest
 
@@ -174,6 +177,7 @@ def test_replay_matches_alerts_to_original_line_numbers(tmp_path, monkeypatch):
     assert result["alert_event_counts"] == {"log_info": 1}
     assert result["precision"] == result["recall"] == 1.0
     assert result["alert_line_numbers"] == [9]
+    assert result["publisher_rule_coverage"] == {}
     assert config.get() is before_config
     assert db.path() == before_path
 
@@ -205,6 +209,7 @@ def test_no_label_replay_reports_undefined_recall(tmp_path, monkeypatch):
     assert result["alert_event_counts"] == {}
     assert result["recall"] is None
     assert result["label_source"] == "no_matching_publisher_label_member"
+    assert result["publisher_rule_coverage"] is None
 
 
 def test_replay_rejects_label_on_unparsed_line(tmp_path, monkeypatch):
@@ -226,6 +231,56 @@ def test_labeled_runs_group_consecutive_lines_and_count_alert_hits():
         {"start_line": 2, "end_line": 3, "alert_line_numbers": [3]},
         {"start_line": 5, "end_line": 6, "alert_line_numbers": []},
     ]
+
+
+def test_publisher_rule_coverage_deduplicates_rules_per_line():
+    labels = "\n".join(
+        [
+            json.dumps(
+                {
+                    "line": 2,
+                    "labels": ["escalate", "change_user"],
+                    "rules": {
+                        "escalate": [
+                            "attacker.escalate.su.login",
+                            "attacker.escalate.sudo.command",
+                        ],
+                        "change_user": ["attacker.escalate.su.login"],
+                    },
+                }
+            ),
+            json.dumps(
+                {
+                    "line": 3,
+                    "labels": ["escalate"],
+                    "rules": {"escalate": ["attacker.escalate.su.login"]},
+                }
+            ),
+        ]
+    )
+
+    assert ait_auth.publisher_rule_coverage(labels, {2}) == {
+        "attacker.escalate.su.login": {"labeled_lines": 2, "alerted_lines": 1},
+        "attacker.escalate.sudo.command": {"labeled_lines": 1, "alerted_lines": 1},
+    }
+
+
+def test_publisher_rule_coverage_rejects_malformed_annotations():
+    labels = '{"line":2,"labels":["escalate"],"rules":{"escalate":"not a list"}}'
+    with pytest.raises(ValueError, match="rule annotation"):
+        ait_auth.publisher_rule_coverage(labels, {2})
+
+
+def test_frozen_ait_summary_can_be_checked_without_raw_dataset():
+    root = Path(__file__).resolve().parents[2]
+    result = subprocess.run(
+        [sys.executable, str(root / "scripts" / "check_ait_auth_evidence.py"), "--snapshot-only"],
+        cwd=root,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "frozen evidence" in result.stdout
 
 
 def test_separate_scenario_has_its_own_source_pins_and_identity(tmp_path, monkeypatch):
