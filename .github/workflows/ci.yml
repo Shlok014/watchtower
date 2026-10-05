@@ -73,10 +73,10 @@ jobs:
       - name: OpenSSH live alert burden matches frozen replay
         run: python scripts/check_openssh_live_evidence.py
 
-      # docs/metrics.json is written by the benchmark; docs/METRICS.md is
-      # generated from it in the same call. The README and the handoff are
-      # hand-written, and that is the gap this closes — a figure copied into
-      # prose today is a figure nobody re-copies when the benchmark is re-run.
+      # docs/metrics.json is written alongside the HDFS benchmark section of
+      # docs/METRICS.md. Other sections have independent evidence, and the
+      # backend tests check the frozen temporal HDFS section against its JSON.
+      # README and handoff figures are hand-written, so copied values can drift.
       # Unifying the frozen split moved IsolationForest 0.0775 -> 0.0640 and
       # throughput 66,273 -> 103,181, in three documents each.
       - name: Published figures match the runs that produced them

@@ -1,8 +1,19 @@
 """Time-disjoint HDFS evidence must expose repeated feature patterns."""
 
+import json
+
 import numpy as np
 
-from eval.hdfs_temporal import evaluate_matrix, replace_metrics_section, run, vector_overlap
+from eval.hdfs_temporal import (
+    METRICS,
+    ROOT,
+    SNAPSHOT,
+    evaluate_matrix,
+    render_section,
+    replace_metrics_section,
+    run,
+    vector_overlap,
+)
 
 
 def test_vector_overlap_counts_seen_test_rows_by_label():
@@ -47,6 +58,18 @@ def test_temporal_section_replacement_preserves_other_results():
     assert "new temporal evidence" not in second
     assert "## AIT replay\n\nuntouched" in second
     assert "## HDFS benchmark\n\nold benchmark" in second
+
+
+def test_published_temporal_figures_match_frozen_result():
+    frozen = json.loads(SNAPSHOT.read_text())
+    document = METRICS.read_text()
+    readme = (ROOT / "README.md").read_text()
+
+    assert replace_metrics_section(document, render_section(frozen)) == document
+    assert f"{frozen['model']['f1']:.4f} F1" in readme
+    assert f"{frozen['split']['train_blocks']:,} blocks" in readme
+    assert f"{frozen['split']['test_blocks']:,} blocks" in readme
+    assert f"{frozen['vector_overlap']['test_rows_seen_in_train']:,} test" in readme
 
 
 def test_temporal_runner_excludes_crossing_blocks_and_does_not_save_model(
