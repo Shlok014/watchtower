@@ -11,7 +11,7 @@ an empty cell. The IP-reputation column, the one thing the README marks
 import json
 from datetime import UTC, datetime
 
-from .. import config
+from .. import config, ledger
 from . import db
 
 
@@ -717,16 +717,31 @@ def known_sources(conn=None, limit: int = 100) -> list[str]:
 def prune(conn, hours: int | None = None) -> int:
     """Delete events older than the window, keeping anything an alert cites.
 
-    The ledger is untouched.
+    The ledger keeps every block, and gains one recording which events this
+    sweep removed. Without it verification cannot tell a sweep from a deletion,
+    and a recent or alert-cited event deleted by hand verified as "pruned".
     """
     hours = retention_hours() if hours is None else hours
-    cutoff = now_ms() - hours * 3600 * 1000
-    cur = conn.execute(
-        "DELETE FROM events WHERE ingested_ts_ms < ? "
-        "AND id NOT IN (SELECT event_id FROM alerts WHERE event_id IS NOT NULL)",
-        (cutoff,),
-    )
-    return cur.rowcount
+    now = now_ms()
+    cutoff = now - hours * 3600 * 1000
+    removed = [
+        r[0]
+        for r in conn.execute(
+            "DELETE FROM events WHERE ingested_ts_ms < ? "
+            "AND id NOT IN (SELECT event_id FROM alerts WHERE event_id IS NOT NULL) "
+            "RETURNING id",
+            (cutoff,),
+        ).fetchall()
+    ]
+    if removed:
+        ledger.append_record(
+            conn,
+            ledger.PRUNE_CANON,
+            {"kind": "prune", "cutoff_ms": cutoff, "event_ids": ledger.id_ranges(removed)},
+            now,
+        )
+        bump(conn, "blocks")
+    return len(removed)
 
 
 def reset_all(conn) -> dict:
@@ -736,7 +751,11 @@ def reset_all(conn) -> dict:
     database that would have left every row in place while the response claimed
     "All data cleared" — the exact class of statement this project exists to
     remove.
+
+    The erased ledger is replaced by a single reset record, so verification
+    reports "reset at T" instead of an empty chain that looks clean.
     """
+    tip = conn.execute("SELECT hash FROM ledger ORDER BY block_id DESC LIMIT 1").fetchone()
     deleted = {}
     for table in (
         "soar_steps",
@@ -751,6 +770,17 @@ def reset_all(conn) -> dict:
     ):
         deleted[table] = conn.execute(f"DELETE FROM {table}").rowcount
     conn.execute("UPDATE counters SET value = 0")
+    ledger.append_record(
+        conn,
+        ledger.RESET_CANON,
+        {
+            "kind": "reset",
+            "blocks_erased": deleted["ledger"],
+            "erased_tip_hash": tip["hash"] if tip else None,
+        },
+        now_ms(),
+    )
+    bump(conn, "blocks")
     # Reclaim the freed pages; auto_vacuum=INCREMENTAL only frees on request.
     return deleted
 

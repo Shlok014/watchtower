@@ -21,8 +21,18 @@ distinguishes *how* the chain is broken:
     chain_break       prev_hash does not point at the previous block
     height_gap        an interior block was deleted; a missing final block
                       requires an external checkpoint to detect
-    pruned            the event is gone (retention), so only the stored
-                      payload digest can be checked — reported, not an error
+    pruned            the event is gone and a prune record says retention
+                      removed it, so only the stored payload digest can be
+                      checked — reported, not an error
+    unrecorded_deletion
+                      the event is gone and no prune record covers it: it was
+                      deleted outside retention (recent, alert-cited, or the
+                      block was repointed at an event that was pruned)
+
+Retention and /reset are the two in-app paths that delete what the chain
+covers. Each appends a record block saying what it removed, so verification
+can tell a sweep from a deletion and a reset from a clean chain. Those blocks
+are hash-chained like any other: editing one breaks its digest.
 
 There is deliberately no proof-of-work nonce. Proof-of-work exists to make
 *consensus* expensive among mutually distrusting writers; with one trusted
@@ -30,6 +40,7 @@ writer it would burn CPU to prove nothing. The old block carried a
 ``random.randint`` "nonce" that was never even an input to the digest.
 """
 
+import bisect
 import hashlib
 import json
 from dataclasses import dataclass, field
@@ -77,6 +88,11 @@ CANON_FIELDS_BY_VERSION = {CANON_V1: _V1_FIELDS, CANON_V2: _V2_FIELDS, CANON_V3:
 CANON_FIELDS = _V3_FIELDS
 
 GENESIS_PREV = "0" * 64
+
+# Record blocks: no event_id, and payload_canon names the record kind. The
+# preimage is the JSON itself, hashed exactly like a pruned event's.
+PRUNE_CANON = "watchtower-prune-v1"
+RESET_CANON = "watchtower-reset-v1"
 
 
 class UnknownCanon(ValueError):
@@ -141,11 +157,24 @@ class VerifyResult:
     pruned: int = 0
     first_bad_height: int | None = None
     content_hashes_recomputed: bool = True
+    reset_at_ms: int | None = None
+    blocks_erased_by_reset: int = 0
+
+    @property
+    def status(self) -> str:
+        if not self.ok:
+            return "tampered"
+        return "reset" if self.reset_at_ms is not None else "clean"
 
     def as_dict(self) -> dict:
         return {
             "check": "full_verification",
             "ok": self.ok,
+            # "reset" is not tampering, but it is not a clean history either:
+            # every block before the reset was erased through the application.
+            "status": self.status,
+            "reset_at_ms": self.reset_at_ms,
+            "blocks_erased_by_reset": self.blocks_erased_by_reset,
             # Hashes prove only the rows still present. A missing suffix has no
             # successor link to expose it without an independently kept tip.
             "completeness_verified": False,
@@ -172,6 +201,7 @@ def verify(conn, page: int = 500) -> VerifyResult:
     SELECTs so it never blocks the writer under WAL.
     """
     result = VerifyResult(ok=True, blocks_checked=0)
+    pruned_by = _prune_records(conn)
     prev_hash = GENESIS_PREV
     expected_height = 1
     last_id = 0
@@ -213,10 +243,35 @@ def verify(conn, page: int = 500) -> VerifyResult:
             # 2. Recompute the payload digest from the live event row. This is
             #    the check the old implementation never performed.
             if r["e_id"] is None:
-                # Retention removed the event. Only the stored preimage remains,
-                # so verify that against the recorded digest and say so.
-                result.pruned += 1
+                # Only the stored preimage remains, so verify that against the
+                # recorded digest. Whether the event is legitimately gone is a
+                # separate question, answered by the prune records.
                 recomputed = hashlib.sha256(r["payload_json"].encode()).hexdigest()
+                record = _record(r["payload_json"])
+                cutoff = pruned_by(r["event_id"])
+                if r["event_id"] is None and record.get("id") is None:
+                    # A prune or reset record, or a block chained with no event.
+                    if r["payload_canon"] == RESET_CANON and record.get("kind") == "reset":
+                        result.reset_at_ms = r["ts_ms"]
+                        result.blocks_erased_by_reset += int(record.get("blocks_erased") or 0)
+                elif (
+                    cutoff is not None
+                    and r["ts_ms"] < cutoff
+                    # event_id is outside the header digest, so the preimage's
+                    # own id must agree with it, or repointing a block at an
+                    # event retention really did remove would launder it.
+                    and record.get("id") == r["event_id"]
+                ):
+                    result.pruned += 1
+                else:
+                    _fail(
+                        result,
+                        height,
+                        r["block_id"],
+                        "unrecorded_deletion",
+                        f"event {r['event_id']} is missing and no retention sweep "
+                        "recorded removing it — it was deleted, not pruned",
+                    )
             else:
                 live = {
                     "id": r["e_id"],
@@ -293,6 +348,49 @@ def verify(conn, page: int = 500) -> VerifyResult:
     return result
 
 
+def _record(payload_json: str) -> dict:
+    try:
+        record = json.loads(payload_json)
+    except ValueError:
+        return {}
+    return record if isinstance(record, dict) else {}
+
+
+def _prune_records(conn):
+    """Return a lookup: event_id -> the retention cutoff under which a sweep
+    recorded removing it, or None.
+
+    An edited record still has to verify as a block in the main pass, so
+    trusting its contents here costs nothing: an edited one fails there.
+    Kept as id ranges, because the ledger never forgets a sweep.
+    """
+    ranges = []
+    for row in conn.execute(
+        "SELECT payload_json FROM ledger WHERE payload_canon = ? AND event_id IS NULL",
+        (PRUNE_CANON,),
+    ):
+        record = _record(row["payload_json"])
+        cutoff = record.get("cutoff_ms")
+        if record.get("kind") == "prune" and type(cutoff) is int:
+            ranges += [
+                (span[0], span[1], cutoff)
+                for span in record.get("event_ids") or []
+                if isinstance(span, list) and len(span) == 2
+            ]
+    ranges.sort()
+    starts = [lo for lo, _, _ in ranges]
+
+    def lookup(event_id):
+        if event_id is None:
+            return None
+        i = bisect.bisect_right(starts, event_id) - 1
+        if i >= 0 and ranges[i][0] <= event_id <= ranges[i][1]:
+            return ranges[i][2]
+        return None
+
+    return lookup
+
+
 def _fail(result: VerifyResult, height: int, block_id: int, reason: str, detail: str) -> None:
     result.ok = False
     if result.first_bad_height is None:
@@ -300,14 +398,7 @@ def _fail(result: VerifyResult, height: int, block_id: int, reason: str, detail:
     result.findings.append(Finding(height, block_id, reason, detail))
 
 
-def append(conn, event: dict, event_id: int, event_ts_ms: int, ts_ms: int) -> dict:
-    """Append one event to the chain and return the new block.
-
-    event_ts_ms is the value stored in events.ts_ms; ts_ms is when the block was
-    appended. Both are hashed, so back-dating either breaks the digest.
-    """
-    payload = {**event, "id": event_id, "ts_ms": event_ts_ms}
-    digest = payload_hash(payload)
+def _append_block(conn, ts_ms: int, event_id, payload_json: str, canon: str, digest: str) -> dict:
     row = conn.execute("SELECT hash FROM ledger ORDER BY block_id DESC LIMIT 1").fetchone()
     prev = row["hash"] if row else GENESIS_PREV
 
@@ -318,7 +409,7 @@ def append(conn, event: dict, event_id: int, event_ts_ms: int, ts_ms: int) -> di
         """INSERT INTO ledger (ts_ms, event_id, payload_json, payload_canon,
                                log_hash, prev_hash, hash)
            VALUES (?,?,?,?,?,?,'')""",
-        (ts_ms, event_id, canonical(payload), PAYLOAD_CANON, digest, prev),
+        (ts_ms, event_id, payload_json, canon, digest, prev),
     )
     block_id = cur.lastrowid
     h = block_hash(block_id, ts_ms, prev, digest)
@@ -331,3 +422,33 @@ def append(conn, event: dict, event_id: int, event_ts_ms: int, ts_ms: int) -> di
         "prev_hash": prev,
         "hash": h,
     }
+
+
+def append_record(conn, canon: str, record: dict, ts_ms: int) -> dict:
+    """Chain a prune or reset record. Call inside the deleting transaction."""
+    payload_json = json.dumps(record, sort_keys=True)
+    digest = hashlib.sha256(payload_json.encode()).hexdigest()
+    return _append_block(conn, ts_ms, None, payload_json, canon, digest)
+
+
+def id_ranges(ids) -> list:
+    """[3, 4, 5, 9] -> [[3, 5], [9, 9]]: a sweep removes mostly contiguous ids."""
+    ranges = []
+    for i in sorted(ids):
+        if ranges and i == ranges[-1][1] + 1:
+            ranges[-1][1] = i
+        else:
+            ranges.append([i, i])
+    return ranges
+
+
+def append(conn, event: dict, event_id: int, event_ts_ms: int, ts_ms: int) -> dict:
+    """Append one event to the chain and return the new block.
+
+    event_ts_ms is the value stored in events.ts_ms; ts_ms is when the block was
+    appended. Both are hashed, so back-dating either breaks the digest.
+    """
+    payload = {**event, "id": event_id, "ts_ms": event_ts_ms}
+    return _append_block(
+        conn, ts_ms, event_id, canonical(payload), PAYLOAD_CANON, payload_hash(payload)
+    )
