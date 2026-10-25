@@ -570,10 +570,19 @@ cd backend
 only honest way to demonstrate the property — anything routed through the app
 would re-chain the block and detect nothing.
 
-Verification distinguishes five outcomes: `payload_mismatch` (the event was
+Verification distinguishes six outcomes: `payload_mismatch` (the event was
 edited), `header_mismatch` (the ledger row was edited), `chain_break`,
-`height_gap` (an interior block was deleted), and `pruned` — an event removed by
-retention, which is reported rather than treated as tampering.
+`height_gap` (an interior block was deleted), `unrecorded_deletion` (an event
+is gone but no retention sweep recorded removing it), and `pruned` — an event
+removed by retention, which is reported rather than treated as tampering.
+Each retention sweep appends a hash-chained prune record listing the event ids
+it removed and its cutoff, so a missing event passes as `pruned` only if a
+sweep recorded it and its block is older than that cutoff. Deleting a recent
+or alert-cited event by hand is reported as tampering.
+
+`/reset` also erases the ledger, so it leaves one reset record in its place
+(time, number of blocks erased, the erased head hash). Verification then
+reports `status: "reset"` and when it happened, not a clean chain.
 
 The chain alone cannot detect an attacker who controls the entire database and
 recomputes every affected hash. It also cannot detect a missing final block:
@@ -626,8 +635,13 @@ forever).
 
 ```bash
 make setup     # both dependency trees
-make dev       # API on :5001, dashboard on :5173
+WATCHTOWER_ALLOW_LOCAL_WRITES=1 make dev   # API on :5001, dashboard on :5173
 ```
+
+The API is read-only by default. Without `WATCHTOWER_ALLOW_LOCAL_WRITES=1`,
+Simulate, Retrain, Reset and Unblock are disabled and writes return
+`403 write_forbidden`. The flag only works on loopback; see
+[Configuration](#configuration).
 
 `make help` lists everything. The ones worth knowing:
 
