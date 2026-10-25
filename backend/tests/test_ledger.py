@@ -11,14 +11,15 @@ from watchtower import ledger
 from watchtower.store import db, repos
 
 
-@pytest.fixture()
-def chain(tmp_path):
-    db.configure(tmp_path / "t.db")
-    conn = db.connect()
+DAY_MS = 24 * 3600 * 1000
+
+
+def _seed(age_ms=0, n=20):
+    """Chain n events ingested age_ms ago, exactly as the consumer would."""
     ids = []
     with db.write() as w:
-        for i in range(20):
-            ts = repos.now_ms() + i
+        for i in range(n):
+            ts = repos.now_ms() - age_ms + i
             event = {
                 "ts_ms": ts,
                 "source": "linux-server",
@@ -52,7 +53,34 @@ def chain(tmp_path):
             ).lastrowid
             ledger.append(w, event, eid, ts, ts)
             ids.append(eid)
-    yield conn, ids
+    return ids
+
+
+def _cite(event_id):
+    with db.write() as w:
+        w.execute(
+            """INSERT INTO alerts (event_id,ts_ms,event,source,ip,user,severity,anomaly_score,
+                                   ruleset_version,explanation,features_json,reasons_json,
+                                   reputation_json,status)
+               VALUES (?,0,'e','s','9.9.9.9','u','low',0.9,'r','x','{}','[]','{}','open')""",
+            (event_id,),
+        )
+
+
+@pytest.fixture()
+def chain(tmp_path):
+    db.configure(tmp_path / "t.db")
+    conn = db.connect()
+    yield conn, _seed()
+    db.close_all()
+
+
+@pytest.fixture()
+def old_chain(tmp_path):
+    """Twenty events ingested two days ago: past the default 24h retention."""
+    db.configure(tmp_path / "old.db")
+    conn = db.connect()
+    yield conn, _seed(age_ms=2 * DAY_MS)
     db.close_all()
 
 
@@ -143,18 +171,82 @@ def test_backdating_a_block_is_detected(chain):
     assert any(f.reason == "header_mismatch" and f.block_id == 8 for f in r.findings)
 
 
-def test_pruned_events_are_reported_not_flagged(chain):
+def test_retention_prune_is_reported_not_flagged(old_chain):
     """Retention removing an event is not tampering.
 
-    The stored preimage is still checked against the recorded digest, and the
-    block is counted as pruned rather than reported as a mismatch.
+    The sweep records what it removed in a hashed prune block, the stored
+    preimage is still checked against the recorded digest, and the block is
+    counted as pruned rather than reported as a mismatch.
     """
+    conn, ids = old_chain
+    _cite(ids[5])
+    with db.write() as w:
+        assert repos.prune(w, hours=24) == 19
+    r = ledger.verify(conn)
+    assert r.ok, [f.detail for f in r.findings]
+    assert r.pruned == 19
+    assert r.blocks_checked == 21, "the prune record is itself a chained block"
+
+
+def test_deleting_a_recent_event_is_detected(chain):
+    """Retention never removes an event newer than its cutoff, so a missing
+    recent event is a deletion, not a prune. It used to verify as `pruned`."""
     conn, ids = chain
     with db.write() as w:
         w.execute("DELETE FROM events WHERE id = ?", (ids[2],))
     r = ledger.verify(conn)
-    assert r.pruned == 1
-    assert r.ok, [f.detail for f in r.findings]
+    assert not r.ok
+    assert [(f.reason, f.height) for f in r.findings] == [("unrecorded_deletion", 3)]
+
+
+def test_deleting_an_alert_cited_event_is_detected(old_chain):
+    """Old enough to prune, but an alert cites it, so retention keeps it.
+
+    alerts.event_id is ON DELETE SET NULL, so the deletion also erases the
+    alert's link to it: nothing at verify time could tell that it was cited.
+    Only a record of what retention actually removed can.
+    """
+    conn, ids = old_chain
+    _cite(ids[4])
+    with db.write() as w:
+        repos.prune(w, hours=24)
+        w.execute("DELETE FROM events WHERE id = ?", (ids[4],))
+    r = ledger.verify(conn)
+    assert not r.ok
+    assert [(f.reason, f.height) for f in r.findings] == [("unrecorded_deletion", 5)]
+
+
+def test_repointing_a_block_at_a_pruned_event_is_detected(old_chain):
+    """event_id is outside the header digest. Pointing a block at an event that
+    retention really did remove must not let it pass as pruned."""
+    conn, ids = old_chain
+    _cite(ids[7])
+    with db.write() as w:
+        repos.prune(w, hours=24)
+        w.execute("UPDATE ledger SET event_id = ? WHERE event_id = ?", (ids[3], ids[7]))
+    r = ledger.verify(conn)
+    assert not r.ok
+    assert any(f.reason == "unrecorded_deletion" and f.height == 8 for f in r.findings)
+
+
+def test_reset_is_recorded_not_reported_clean(chain):
+    """/reset erases the ledger through the application. It used to leave an
+    empty chain that verified exactly like a clean one."""
+    conn, _ = chain
+    with db.write() as w:
+        repos.reset_all(w)
+    result = ledger.verify(conn).as_dict()
+    assert result["status"] == "reset"
+    assert result["reset_at_ms"] is not None
+    assert result["blocks_erased_by_reset"] == 20
+
+
+def test_reset_record_cannot_be_edited(chain):
+    conn, _ = chain
+    with db.write() as w:
+        repos.reset_all(w)
+        w.execute("UPDATE ledger SET payload_json = replace(payload_json, '20', '0')")
+    assert ledger.verify(conn).as_dict()["status"] == "tampered"
 
 
 def test_canonical_form_is_stable_across_field_additions(chain):
