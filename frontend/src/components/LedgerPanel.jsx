@@ -14,7 +14,9 @@ export function LedgerPanel({ blocks, onVerify, result, verifying, dimmed }) {
       {result && (
         <div className={`chain-validation ${result.ok ? 'valid' : 'invalid'}`}>
           {result.ok ? (
-            <>✅ {result.blocks_checked} present blocks verified against available records. This dashboard has no external checkpoint, so it cannot detect a deleted final block.
+            <>{result.status === 'reset' &&
+                `⚠️ Ledger reset at ${new Date(result.reset_at_ms).toLocaleString()} erased ${result.blocks_erased_by_reset} earlier block(s). `}
+              ✅ {result.blocks_checked} present blocks verified against available records. This dashboard has no external checkpoint, so it cannot detect a deleted final block.
               {result.pruned_events > 0 &&
                 ` (${result.pruned_events} reference events removed by retention, checked against the stored preimage)`}
             </>

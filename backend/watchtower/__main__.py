@@ -157,7 +157,15 @@ def _verify(args) -> int:
         return 0
 
     if result.ok:
-        print(f"✅ {n} present blocks verified — all available digests match.")
+        if result.reset_at_ms is not None:
+            # Not tampering, but not a clean history: say so before anything green.
+            print(
+                f"⚠️  Ledger was reset at {repos.to_iso(result.reset_at_ms)}: "
+                f"{result.blocks_erased_by_reset} earlier block(s) erased through /reset."
+            )
+            print(f"   {n} present blocks since then — all available digests match.")
+        else:
+            print(f"✅ {n} present blocks verified — all available digests match.")
         if checkpoint:
             print(f"   External checkpoint matched at height {checkpoint['height']}.")
         else:

@@ -10,7 +10,6 @@ import pytest
 from watchtower import ledger
 from watchtower.store import db, repos
 
-
 DAY_MS = 24 * 3600 * 1000
 
 

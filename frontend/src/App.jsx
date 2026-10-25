@@ -155,10 +155,12 @@ export default function App() {
     run('Verify chain', api.verifyChain, (res) => {
       setChainResult(res)
       showToast(
-        res.ok
-          ? `✅ ${res.blocks_checked} present blocks verified; no external checkpoint, so truncation is unproven`
-          : `❌ Tamper detected at height ${res.first_bad_height} — ${res.findings?.[0]?.reason}`,
-        res.ok ? 'success' : 'danger'
+        res.status === 'reset'
+          ? `⚠️ Ledger was reset: ${res.blocks_erased_by_reset} earlier block(s) erased; ${res.blocks_checked} since then verified`
+          : res.ok
+            ? `✅ ${res.blocks_checked} present blocks verified; no external checkpoint, so truncation is unproven`
+            : `❌ Tamper detected at height ${res.first_bad_height} — ${res.findings?.[0]?.reason}`,
+        res.status === 'reset' ? 'info' : res.ok ? 'success' : 'danger'
       )
     })
 
